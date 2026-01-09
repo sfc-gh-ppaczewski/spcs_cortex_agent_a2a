@@ -363,9 +363,10 @@ Or use Docker Compose with multiple services.
 ## 📚 Resources
 
 - [A2A Protocol Specification](https://github.com/google/a2a)
-- [Snowflake Cortex Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex)
+- [Snowflake Cortex Agent Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents)
+- [Cortex Agents API Reference](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-rest-api)
 - [Snowflake Key-Pair Authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth)
-- [Cortex Agents API Reference](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents)
+
 
 ## 📄 License
 

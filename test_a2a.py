@@ -134,7 +134,7 @@ Examples:
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Show full response without truncation"
+        help="Show raw JSON events in streaming mode"
     )
     parser.add_argument(
         "--stream",
@@ -242,13 +242,7 @@ Examples:
                 for part in parts:
                     if part.get("kind") == "text" or part.get("type") == "text":
                         text = part.get("text", "")
-                        # Truncate very long responses unless --full is specified
-                        if len(text) > 2000 and not args.full:
-                            print(text[:2000])
-                            print(f"\n... [Response truncated, total length: {len(text)} chars]")
-                            print("Use --full flag to see complete response")
-                        else:
-                            print(text)
+                        print(text)
         
         print("\n✅ Test completed successfully!")
             

@@ -253,7 +253,7 @@ python test_a2a.py
 | `--query "..."` | The question to send to the agent | `"What data do you have access to?"` |
 | `--url URL` | Base URL of the A2A server | `http://localhost:8000` |
 | `--card-only` | Only fetch the agent card, don't send a query | - |
-| `--full` | Show full response without truncation | - |
+| `--full` | Show raw JSON events in streaming mode | - |
 | `--stream` | Use streaming mode (experimental) | - |
 
 ### Examples
@@ -262,8 +262,8 @@ python test_a2a.py
 # Send a custom query
 python test_a2a.py --query "Show me all players from Real Madrid"
 
-# View full response (no truncation)
-python test_a2a.py --query "List the top scorers" --full
+# Show raw JSON events in streaming mode
+python test_a2a.py --query "List the top scorers" --stream --full
 
 # Just check the agent card (discovery endpoint)
 python test_a2a.py --card-only
@@ -319,8 +319,8 @@ Barcelona currently has 3 active players...
 ```
 → Make sure the server is running with `python main.py`
 
-**Long responses truncated:**
-→ Use `--full` flag to see the complete response
+**Want to see raw streaming events:**
+→ Use `--stream --full` flags together
 
 ## 🐳 Docker Deployment
 

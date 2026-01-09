@@ -76,6 +76,55 @@ class SnowflakeCortexExecutor(AgentExecutor):
         
         return full_text.strip()
 
+    async def _stream_sse_response(self, response, event_queue: EventQueue) -> str:
+        """
+        Stream SSE response chunks to the A2A client in real-time.
+        
+        Args:
+            response: requests.Response object with streaming content
+            event_queue: Queue to push streaming chunks
+            
+        Returns:
+            Complete text for final message
+        """
+        full_text = ""
+        chunk_buffer = ""
+        message_id = str(uuid.uuid4())
+        
+        for line in response.iter_lines(decode_unicode=True):
+            if line and line.startswith("data:"):
+                try:
+                    data = json.loads(line[5:].strip())
+                    if "text" in data:
+                        chunk = data["text"]
+                        full_text += chunk
+                        chunk_buffer += chunk
+                        
+                        # Send chunks when we have enough content (word boundaries)
+                        # This provides smooth streaming without overwhelming the client
+                        if len(chunk_buffer) >= 50 or chunk.endswith(('\n', '.', '!', '?')):
+                            streaming_msg = Message(
+                                messageId=message_id,
+                                role="agent",
+                                parts=[TextPart(text=chunk_buffer)]
+                            )
+                            await event_queue.enqueue_event(streaming_msg)
+                            chunk_buffer = ""
+                            
+                except json.JSONDecodeError:
+                    pass
+        
+        # Send any remaining buffer
+        if chunk_buffer:
+            streaming_msg = Message(
+                messageId=message_id,
+                role="agent",
+                parts=[TextPart(text=chunk_buffer)]
+            )
+            await event_queue.enqueue_event(streaming_msg)
+        
+        return full_text.strip()
+
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """
         The main entry point called by the A2A Protocol when a task is received.
@@ -87,10 +136,16 @@ class SnowflakeCortexExecutor(AgentExecutor):
         try:
             # 1. Extract User Input
             incoming_text = "Hello"
+            
             if context.message and context.message.parts:
                 for part in context.message.parts:
-                    if isinstance(part, TextPart):
-                        incoming_text = part.text
+                    # A2A SDK wraps parts in a Part container with a 'root' attribute
+                    actual_part = getattr(part, 'root', part)
+                    if isinstance(actual_part, TextPart):
+                        incoming_text = actual_part.text
+                        break
+                    elif hasattr(actual_part, 'text'):
+                        incoming_text = actual_part.text
                         break
             
             print(f"📥 Received query: {incoming_text}")
@@ -137,11 +192,12 @@ class SnowflakeCortexExecutor(AgentExecutor):
                 )
                 return
 
-            # 5. Parse Streaming SSE Response
+            # 5. Parse SSE Response (collect full response for non-streaming A2A)
             content_type = response.headers.get("Content-Type", "")
             
             if "text/event-stream" in content_type:
-                # Parse SSE streaming response
+                # Parse SSE streaming response and collect full text
+                print(f"📡 Receiving streaming response from Cortex...")
                 final_answer = self._parse_sse_response(response)
             else:
                 # Fallback for non-streaming response
@@ -162,13 +218,12 @@ class SnowflakeCortexExecutor(AgentExecutor):
             
             print(f"✅ Got response from Cortex ({len(final_answer)} chars)")
             
-            # 6. Send Final Response
+            # 6. Send complete response
             response_msg = Message(
                 messageId=str(uuid.uuid4()),
                 role="agent",
                 parts=[TextPart(text=final_answer)]
             )
-            
             await event_queue.enqueue_event(response_msg)
             
             # 7. Mark Task as Complete

@@ -232,6 +232,96 @@ response = requests.post(
 print(response.json())
 ```
 
+## 🧪 Testing with test_a2a.py
+
+A lightweight test client is included to verify the A2A server is working correctly.
+
+### Basic Usage
+
+```bash
+# Make sure the server is running first
+python main.py
+
+# In another terminal, run the test client
+python test_a2a.py
+```
+
+### Command Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--query "..."` | The question to send to the agent | `"What data do you have access to?"` |
+| `--url URL` | Base URL of the A2A server | `http://localhost:8000` |
+| `--card-only` | Only fetch the agent card, don't send a query | - |
+| `--full` | Show full response without truncation | - |
+| `--stream` | Use streaming mode (experimental) | - |
+
+### Examples
+
+```bash
+# Send a custom query
+python test_a2a.py --query "Show me all players from Real Madrid"
+
+# View full response (no truncation)
+python test_a2a.py --query "List the top scorers" --full
+
+# Just check the agent card (discovery endpoint)
+python test_a2a.py --card-only
+
+# Test against a different server/port
+python test_a2a.py --url http://localhost:8001 --query "Hello"
+
+# Streaming mode (requires server streaming support)
+python test_a2a.py --query "Hello" --stream
+```
+
+### Sample Output
+
+```
+🔷 Snowflake Cortex A2A Agent Test Client
+   Server: http://localhost:8000
+
+============================================================
+📋 Fetching Agent Card...
+============================================================
+Name: Cortex Agent: YOUR_AGENT_NAME
+Description: Your agent description
+Version: 1.0.0
+Skills: ['Cortex Agent Query']
+Streaming: False
+
+============================================================
+📨 Sending Query: Show me players from Barcelona
+============================================================
+
+📥 Raw JSON Response:
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "kind": "message",
+    "parts": [{"kind": "text", "text": "..."}]
+  }
+}
+
+============================================================
+🤖 Agent Response
+============================================================
+Barcelona currently has 3 active players...
+
+✅ Test completed successfully!
+```
+
+### Troubleshooting Test Client
+
+**Connection Error:**
+```
+❌ Connection Error: Could not connect to http://localhost:8000
+```
+→ Make sure the server is running with `python main.py`
+
+**Long responses truncated:**
+→ Use `--full` flag to see the complete response
+
 ## 🐳 Docker Deployment
 
 ### Build and Run
@@ -270,6 +360,7 @@ cortex_agent_a2a/
 ├── auth.py              # JWT authentication with SHA256 fingerprint
 ├── executor.py          # A2A AgentExecutor for Cortex integration
 ├── main.py              # A2A server entry point
+├── test_a2a.py          # Standalone test client
 ├── requirements.txt     # Python dependencies
 ├── Dockerfile           # Container deployment
 ├── .env                 # Environment configuration (create this)

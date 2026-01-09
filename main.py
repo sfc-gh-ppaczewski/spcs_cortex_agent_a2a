@@ -43,6 +43,8 @@ def create_app() -> A2AStarletteApplication:
     )
 
     # 2. Define Agent Capabilities
+    # Note: Full streaming support requires additional A2A SDK configuration
+    # Currently using non-streaming mode for simplicity
     capabilities = AgentCapabilities(
         streaming=False,
         push_notifications=False

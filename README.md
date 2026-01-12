@@ -253,8 +253,6 @@ python test_a2a.py
 | `--query "..."` | The question to send to the agent | `"What data do you have access to?"` |
 | `--url URL` | Base URL of the A2A server | `http://localhost:8000` |
 | `--card-only` | Only fetch the agent card, don't send a query | - |
-| `--full` | Show raw JSON events in streaming mode | - |
-| `--stream` | Use streaming mode (experimental) | - |
 
 ### Examples
 
@@ -262,17 +260,11 @@ python test_a2a.py
 # Send a custom query
 python test_a2a.py --query "Show me all players from Real Madrid"
 
-# Show raw JSON events in streaming mode
-python test_a2a.py --query "List the top scorers" --stream --full
-
 # Just check the agent card (discovery endpoint)
 python test_a2a.py --card-only
 
 # Test against a different server/port
 python test_a2a.py --url http://localhost:8001 --query "Hello"
-
-# Streaming mode (requires server streaming support)
-python test_a2a.py --query "Hello" --stream
 ```
 
 ### Sample Output
@@ -318,9 +310,6 @@ Barcelona currently has 3 active players...
 ❌ Connection Error: Could not connect to http://localhost:8000
 ```
 → Make sure the server is running with `python main.py`
-
-**Want to see raw streaming events:**
-→ Use `--stream --full` flags together
 
 ## 🐳 Docker Deployment
 

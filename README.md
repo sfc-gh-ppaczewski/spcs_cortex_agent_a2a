@@ -5,13 +5,13 @@ An Agent-to-Agent (A2A) protocol wrapper for Snowflake Cortex Agents deployed on
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
-│   A2A Client    │────▶│   A2A Wrapper        │────▶│  Snowflake Cortex   │
-│  (Other Agents) │     │   (SPCS Service)     │     │      Agent          │
-└─────────────────┘     └──────────────────────┘     └─────────────────────┘
-        │                       │                              │
-   Public Endpoint       SPCS Session Token            Internal Network
+┌─────────────────┐  Public Endpoint  ┌──────────────────────┐  SPCS Session Token  ┌─────────────────────┐
+│   A2A Client    │──────────────────▶│   A2A Wrapper        │─────────────────────▶│  Snowflake Cortex   │
+│  (Other Agents) │    (JWT Auth)     │   (SPCS Service)     │                      │      Agent          │
+└─────────────────┘                   └──────────────────────┘                      └─────────────────────┘
 ```
+
+The A2A client connects to the A2A wrapper via a **public SPCS endpoint** using JWT authentication. The A2A wrapper then uses the **SPCS session token** (automatically provided by the SPCS runtime) to authenticate with the Snowflake Cortex Agent on the internal network.
 
 ## Prerequisites
 
@@ -31,6 +31,8 @@ Before deploying, gather the following information:
 | `<AGENT_DATABASE>` | Database containing your Cortex Agent | `SHOW DATABASES;` |
 | `<AGENT_SCHEMA>` | Schema containing your Cortex Agent | `SHOW SCHEMAS IN DATABASE <db>;` |
 | `<AGENT_NAME>` | Name of your Cortex Agent | `SHOW AGENTS IN SCHEMA <db>.<schema>;` |
+| `<ACCOUNT_LOCATOR>` | Your Snowflake account locator (for JWT auth) | `SELECT CURRENT_ACCOUNT();` |
+| `<USERNAME>` | Your Snowflake username | `SELECT CURRENT_USER();` |
 
 ## Deployment
 
@@ -109,8 +111,9 @@ docker push <repository_url>/cortex-a2a-agent:latest
 
 ### Step 6: Create the Service
 
+Run this SQL in Snowflake (replace <AGENT_DATABASE>, <AGENT_SCHEMA> and <AGENT_NAME>)
+
 ```sql
--- Create service (replace <AGENT_DATABASE>, <AGENT_SCHEMA>, <AGENT_NAME>)
 CREATE SERVICE CORTEX_A2A_AGENT
     IN COMPUTE POOL A2A_AGENT_POOL
     FROM SPECIFICATION $$

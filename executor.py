@@ -1,6 +1,10 @@
 """
 Executor module for Snowflake Cortex A2A Agent.
 Implements the A2A AgentExecutor to handle task execution via Snowflake Cortex.
+
+Supports both SPCS (Snowpark Container Services) and local deployment:
+- SPCS: Uses session token from /snowflake/session/token
+- Local: Uses JWT key-pair authentication
 """
 import os
 import json
@@ -19,7 +23,7 @@ from a2a.types import (
 )
 
 # Import our Auth Helper
-from auth import generate_snowflake_jwt
+from auth import is_running_in_spcs, get_auth_token_and_type
 
 load_dotenv()
 
@@ -30,25 +34,46 @@ class SnowflakeCortexExecutor(AgentExecutor):
     
     This executor receives tasks from A2A clients, forwards them to the
     configured Snowflake Cortex Agent, and returns the responses.
+    
+    Supports both SPCS deployment (using session token) and local
+    deployment (using JWT key-pair authentication).
     """
     
     def __init__(self):
         """Initialize the executor with Snowflake configuration."""
-        # Load config once during initialization
-        # SNOWFLAKE_ACCOUNT_LOCATOR is used for JWT auth (original format)
-        # SNOWFLAKE_ACCOUNT is used for API URL (with hyphens)
-        self.account_locator = os.getenv("SNOWFLAKE_ACCOUNT_LOCATOR")
-        self.account = os.getenv("SNOWFLAKE_ACCOUNT")
-        self.user = os.getenv("SNOWFLAKE_USER")
-        self.key_path = os.getenv("PRIVATE_KEY_PATH")
+        self.is_spcs = is_running_in_spcs()
+        
+        # Agent configuration
         self.db = os.getenv("AGENT_DATABASE")
         self.schema = os.getenv("AGENT_SCHEMA")
         self.agent_name = os.getenv("AGENT_NAME")
         
-        # API Endpoint Construction (use account with hyphens for URL)
-        self.api_url = f"https://{self.account}.snowflakecomputing.com/api/v2/databases/{self.db}/schemas/{self.schema}/agents/{self.agent_name}:run"
+        # Build API URL based on environment
+        if self.is_spcs:
+            # In SPCS, use the internal Snowflake host and port
+            # SPCS provides SNOWFLAKE_HOST and SNOWFLAKE_PORT for internal network access
+            snowflake_host = os.getenv("SNOWFLAKE_HOST")
+            snowflake_port = os.getenv("SNOWFLAKE_PORT", "443")
+            
+            if not snowflake_host:
+                raise ValueError(
+                    "SNOWFLAKE_HOST must be set in SPCS environment"
+                )
+            
+            # Use internal network - include port if not default
+            if snowflake_port == "443":
+                self.api_url = f"https://{snowflake_host}/api/v2/databases/{self.db}/schemas/{self.schema}/agents/{self.agent_name}:run"
+            else:
+                self.api_url = f"https://{snowflake_host}:{snowflake_port}/api/v2/databases/{self.db}/schemas/{self.schema}/agents/{self.agent_name}:run"
+            
+            print(f"🔷 Snowflake Cortex A2A Agent initialized (SPCS mode)")
+            print(f"   Using internal network: {snowflake_host}:{snowflake_port}")
+        else:
+            # Local development: use account with hyphens for URL
+            self.account = os.getenv("SNOWFLAKE_ACCOUNT")
+            self.api_url = f"https://{self.account}.snowflakecomputing.com/api/v2/databases/{self.db}/schemas/{self.schema}/agents/{self.agent_name}:run"
+            print(f"🔷 Snowflake Cortex A2A Agent initialized (Local mode)")
         
-        print(f"🔷 Snowflake Cortex A2A Agent initialized")
         print(f"   Agent: {self.db}.{self.schema}.{self.agent_name}")
         print(f"   Endpoint: {self.api_url}")
 
@@ -155,14 +180,14 @@ class SnowflakeCortexExecutor(AgentExecutor):
                 TaskStatus(state=TaskState.working)
             )
 
-            # 3. Authenticate (use account_locator for JWT)
-            token = generate_snowflake_jwt(self.account_locator, self.user, self.key_path)
+            # 3. Authenticate (automatically uses SPCS token or JWT based on environment)
+            token, token_type = get_auth_token_and_type()
 
             # 4. Call Snowflake Cortex API
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
-                "X-Snowflake-Authorization-Token-Type": "KEYPAIR_JWT",
+                "X-Snowflake-Authorization-Token-Type": token_type,
                 "Accept": "application/json"
             }
 

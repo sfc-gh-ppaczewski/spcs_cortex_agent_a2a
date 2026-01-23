@@ -1,194 +1,150 @@
-# 🔷 Snowflake Cortex A2A Agent
+# Snowflake Cortex A2A Agent
 
-An Agent-to-Agent (A2A) protocol wrapper for **any** Snowflake Cortex Agent. This service exposes your Cortex Agent through the Google A2A protocol, enabling other AI agents to interact with it through a standardized interface.
+An Agent-to-Agent (A2A) protocol wrapper for Snowflake Cortex Agents deployed on **Snowpark Container Services (SPCS)**. This service exposes your Cortex Agent through the Google A2A protocol, enabling other AI agents to interact with it through a standardized interface.
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
 │   A2A Client    │────▶│   A2A Wrapper        │────▶│  Snowflake Cortex   │
-│  (Other Agents) │     │   (This Service)     │     │      Agent          │
+│  (Other Agents) │     │   (SPCS Service)     │     │      Agent          │
 └─────────────────┘     └──────────────────────┘     └─────────────────────┘
-                              │
-                              ├── auth.py (JWT Authentication)
-                              ├── executor.py (Cortex Integration)
-                              └── main.py (A2A Server)
+        │                       │                              │
+   Public Endpoint       SPCS Session Token            Internal Network
 ```
 
-**Components:**
-- **A2A SDK**: Handles HTTP server, JSON-RPC routing, and protocol compliance
-- **Agent Executor**: Custom logic that receives A2A tasks, calls Snowflake, and returns responses
-- **Snowflake Cortex**: Your backend Cortex Agent (configurable via environment variables)
+## Prerequisites
 
-## 📋 Prerequisites
+- Docker (podman can be sufficient too but some command would need to be altered)
+- Snowflake account with:
+  - SPCS enabled
+  - A deployed Cortex Agent
+  - ACCOUNTADMIN role (or role with SPCS privileges)
+- SnowCLI installed
 
-- Python 3.11+
-- Snowflake account with Cortex Agent access
-- RSA key pair for Snowflake authentication
-- A deployed Cortex Agent in Snowflake
+## Configuration Parameters
 
-## 🚀 Quick Start
+Before deploying, gather the following information:
 
-### 1. Clone and Setup Environment
+| Parameter | Description | How to Find |
+|-----------|-------------|-------------|
+| `<AGENT_DATABASE>` | Database containing your Cortex Agent | `SHOW DATABASES;` |
+| `<AGENT_SCHEMA>` | Schema containing your Cortex Agent | `SHOW SCHEMAS IN DATABASE <db>;` |
+| `<AGENT_NAME>` | Name of your Cortex Agent | `SHOW AGENTS IN SCHEMA <db>.<schema>;` |
 
-```bash
-cd cortex_agent_a2a
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+## Deployment
 
-### 2. Generate RSA Key Pair (if needed)
-
-```bash
-# Generate private key
-openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
-
-# Generate public key
-openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
-
-# Get the public key content (for Snowflake)
-grep -v "BEGIN\|END" rsa_key.pub | tr -d '\n'
-```
-
-### 3. Configure Snowflake User
-
-Run this SQL in Snowflake (replace with your public key):
+### Step 1: Create Snowflake Resources
 
 ```sql
-ALTER USER your_username SET RSA_PUBLIC_KEY='MIIBIjANBgkq...your_public_key...AQAB';
+-- Set your context
+USE ROLE ACCOUNTADMIN;
+USE DATABASE <AGENT_DATABASE>;
+USE SCHEMA <AGENT_SCHEMA>;
 
--- Verify the key is set
-DESC USER your_username;
--- Look for RSA_PUBLIC_KEY_FP
+-- Create compute pool
+CREATE COMPUTE POOL IF NOT EXISTS A2A_AGENT_POOL
+    MIN_NODES = 1
+    MAX_NODES = 1
+    INSTANCE_FAMILY = CPU_X64_XS
+    AUTO_RESUME = TRUE
+    AUTO_SUSPEND_SECS = 1800;
+
+-- Create image repository
+CREATE IMAGE REPOSITORY IF NOT EXISTS A2A_IMAGES;
+
+-- Get repository URL (save this for Step 2)
+SHOW IMAGE REPOSITORIES LIKE 'A2A_IMAGES';
 ```
 
-### 4. Configure Environment
-
-Create a `.env` file based on `env.template`:
-
-```ini
-# Snowflake Connection
-SNOWFLAKE_ACCOUNT_LOCATOR=YOUR_ACCOUNT_LOCATOR
-SNOWFLAKE_ACCOUNT=YOUR_ORG-YOUR_ACCOUNT
-SNOWFLAKE_USER=your_username
-PRIVATE_KEY_PATH=rsa_key.p8
-
-# Cortex Agent Details - Point to YOUR agent
-AGENT_DATABASE=YOUR_DATABASE
-AGENT_SCHEMA=YOUR_SCHEMA
-AGENT_NAME=YOUR_CORTEX_AGENT
-
-# Optional: Customize descriptions
-AGENT_DESCRIPTION=My custom Cortex Agent description
-AGENT_URL=http://localhost:8000
-```
-
-**Finding your account identifiers:**
-```sql
--- Get account locator (for JWT)
-SELECT CURRENT_ACCOUNT();
-
--- Get full account identifier (for URL - replace underscores with hyphens)
-SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME();
-```
-
-### 5. Run the Server
+### Step 2: Build and Push Docker Image
 
 ```bash
-source venv/bin/activate
-python main.py
+# Build the image
+docker build --platform linux/amd64 -t cortex-a2a-agent:latest .
+
+# Login to Snowflake registry (replace <YOUR_CONNECTION> with SnowCLI connection)
+snow spcs image-registry login --connection <YOUR_CONNECTION>
+
+# Tag and push (replace <repository_url> with value from Step 1)
+docker tag cortex-a2a-agent:latest <repository_url>/cortex-a2a-agent:latest
+docker push <repository_url>/cortex-a2a-agent:latest
 ```
 
-The server will start on `http://localhost:8000`
+### Step 3: Create the Service
 
-## 🔌 API Endpoints
+```sql
+-- Create service (replace <AGENT_DATABASE>, <AGENT_SCHEMA>, <AGENT_NAME>)
+CREATE SERVICE CORTEX_A2A_AGENT
+    IN COMPUTE POOL A2A_AGENT_POOL
+    FROM SPECIFICATION $$
+spec:
+  containers:
+    - name: a2a-agent
+      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/cortex-a2a-agent:latest
+      env:
+        AGENT_DATABASE: <AGENT_DATABASE>
+        AGENT_SCHEMA: <AGENT_SCHEMA>
+        AGENT_NAME: <AGENT_NAME>
+        AGENT_DESCRIPTION: "A Snowflake Cortex Agent exposed via the A2A protocol."
+      resources:
+        requests:
+          cpu: 0.5
+          memory: 512Mi
+        limits:
+          cpu: 1
+          memory: 1Gi
+  endpoints:
+    - name: a2a
+      port: 8000
+      public: true
+$$
+    MIN_INSTANCES = 1
+    MAX_INSTANCES = 1;
+```
+
+### Step 4: Get Your Public Endpoint
+
+```sql
+-- Check service status (wait for READY)
+SELECT SYSTEM$GET_SERVICE_STATUS('CORTEX_A2A_AGENT');
+
+-- Get public endpoint URL
+SHOW ENDPOINTS IN SERVICE CORTEX_A2A_AGENT;
+-- Copy the 'ingress_url' value
+```
+
+## Calling the Service
+
+The SPCS public endpoint requires Snowflake authentication via JWT token.
+
+### Generate JWT Token
+
+```bash
+# Setup (one-time)
+python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+
+# Generate token
+TOKEN=$(python3 -c "
+from auth import generate_snowflake_jwt
+print(generate_snowflake_jwt('<ACCOUNT_LOCATOR>', '<USERNAME>', 'rsa_key.p8'))
+")
+```
+
+> **Note:** You need an RSA key pair configured for your Snowflake user. See [Snowflake Key-Pair Authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth).
 
 ### Discovery Endpoint
 
-```
-GET /.well-known/agent.json
-```
-
-Returns the Agent Card describing capabilities:
-
-```json
-{
-  "name": "Cortex Agent: YOUR_AGENT_NAME",
-  "description": "Your agent description...",
-  "version": "1.0.0",
-  "skills": [
-    {
-      "id": "query_cortex_agent",
-      "name": "Cortex Agent Query",
-      "description": "Sends queries to the Snowflake Cortex Agent...",
-      "tags": ["snowflake", "cortex", "ai", "analytics"]
-    }
-  ],
-  "capabilities": {
-    "streaming": false,
-    "pushNotifications": false
-  }
-}
+```bash
+curl -H "Authorization: Snowflake Token=\"$TOKEN\"" \
+  https://<ingress_url>/.well-known/agent-card.json
 ```
 
-### Task Endpoint (JSON-RPC)
-
-```
-POST /
-Content-Type: application/json
-```
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "message/send",
-  "id": "unique-request-id",
-  "params": {
-    "message": {
-      "messageId": "unique-message-id",
-      "role": "user",
-      "parts": [
-        {
-          "type": "text",
-          "text": "Your question here"
-        }
-      ]
-    }
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "unique-request-id",
-  "result": {
-    "kind": "message",
-    "messageId": "response-message-id",
-    "role": "agent",
-    "parts": [
-      {
-        "kind": "text",
-        "text": "Agent's response..."
-      }
-    ]
-  }
-}
-```
-
-## 📝 Example Usage
-
-### Using cURL
+### Send a Query
 
 ```bash
-# Check agent discovery
-curl http://localhost:8000/.well-known/agent.json
-
-# Send a query to the Cortex Agent
-curl -X POST http://localhost:8000/ \
+curl -X POST https://<ingress_url>/ \
+  -H "Authorization: Snowflake Token=\"$TOKEN\"" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -204,18 +160,22 @@ curl -X POST http://localhost:8000/ \
   }'
 ```
 
-### Using Python
+### Python Example
 
 ```python
 import requests
+from auth import generate_snowflake_jwt
 
-# Discovery
-response = requests.get("http://localhost:8000/.well-known/agent.json")
-print(response.json())
+ENDPOINT = "https://<ingress_url>"
+token = generate_snowflake_jwt("<account_locator>", "<username>", "rsa_key.p8")
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f'Snowflake Token="{token}"'
+}
 
-# Query
 response = requests.post(
-    "http://localhost:8000/",
+    f"{ENDPOINT}/",
+    headers=headers,
     json={
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -224,7 +184,7 @@ response = requests.post(
             "message": {
                 "messageId": "msg-001",
                 "role": "user",
-                "parts": [{"type": "text", "text": "Your question here"}]
+                "parts": [{"type": "text", "text": "How many customers do we have?"}]
             }
         }
     }
@@ -232,226 +192,35 @@ response = requests.post(
 print(response.json())
 ```
 
-## 🧪 Testing with test_a2a.py
+## Service Management
 
-A lightweight test client is included to verify the A2A server is working correctly.
+```sql
+-- View logs
+SELECT SYSTEM$GET_SERVICE_LOGS('CORTEX_A2A_AGENT', 0, 'a2a-agent', 100);
 
-### Basic Usage
+-- Suspend (stops billing)
+ALTER SERVICE CORTEX_A2A_AGENT SUSPEND;
 
-```bash
-# Make sure the server is running first
-python main.py
+-- Resume
+ALTER SERVICE CORTEX_A2A_AGENT RESUME;
 
-# In another terminal, run the test client
-python test_a2a.py
+-- Delete
+DROP SERVICE CORTEX_A2A_AGENT;
+DROP COMPUTE POOL A2A_AGENT_POOL;
 ```
 
-### Command Line Options
+## Troubleshooting
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--query "..."` | The question to send to the agent | `"What data do you have access to?"` |
-| `--url URL` | Base URL of the A2A server | `http://localhost:8000` |
-| `--card-only` | Only fetch the agent card, don't send a query | - |
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Service not starting | Compute pool not ready | Wait for `DESCRIBE COMPUTE POOL` to show ACTIVE/IDLE |
+| 401 Unauthorized | Invalid/expired token | Regenerate JWT token (expires after 1 hour) |
+| Internal error | Missing SNOWFLAKE_HOST | Don't set SNOWFLAKE_HOST manually - let SPCS provide it |
+| Agent not found (404) | Wrong agent path | Verify with `SHOW AGENTS IN SCHEMA <db>.<schema>;` |
 
-### Examples
+## Resources
 
-```bash
-# Send a custom query
-python test_a2a.py --query "Show me all players from Real Madrid"
-
-# Just check the agent card (discovery endpoint)
-python test_a2a.py --card-only
-
-# Test against a different server/port
-python test_a2a.py --url http://localhost:8001 --query "Hello"
-```
-
-### Sample Output
-
-```
-🔷 Snowflake Cortex A2A Agent Test Client
-   Server: http://localhost:8000
-
-============================================================
-📋 Fetching Agent Card...
-============================================================
-Name: Cortex Agent: YOUR_AGENT_NAME
-Description: Your agent description
-Version: 1.0.0
-Skills: ['Cortex Agent Query']
-Streaming: False
-
-============================================================
-📨 Sending Query: Show me players from Barcelona
-============================================================
-
-📥 Raw JSON Response:
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "kind": "message",
-    "parts": [{"kind": "text", "text": "..."}]
-  }
-}
-
-============================================================
-🤖 Agent Response
-============================================================
-Barcelona currently has 3 active players...
-
-✅ Test completed successfully!
-```
-
-### Troubleshooting Test Client
-
-**Connection Error:**
-```
-❌ Connection Error: Could not connect to http://localhost:8000
-```
-→ Make sure the server is running with `python main.py`
-
-## 🐳 Docker Deployment
-
-### Build and Run
-
-```bash
-# Build the image
-docker build -t cortex-a2a-agent .
-
-# Run with environment file
-docker run -p 8000:8000 \
-  --env-file .env \
-  -v $(pwd)/rsa_key.p8:/app/rsa_key.p8:ro \
-  cortex-a2a-agent
-```
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  cortex-agent:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    volumes:
-      - ./rsa_key.p8:/app/rsa_key.p8:ro
-    restart: unless-stopped
-```
-
-## 📁 Project Structure
-
-```
-cortex_agent_a2a/
-├── auth.py              # JWT authentication with SHA256 fingerprint
-├── executor.py          # A2A AgentExecutor for Cortex integration
-├── main.py              # A2A server entry point
-├── test_a2a.py          # Standalone test client
-├── requirements.txt     # Python dependencies
-├── Dockerfile           # Container deployment
-├── .env                 # Environment configuration (create this)
-├── .gitignore           # Git ignore rules
-├── rsa_key.p8          # RSA private key (generate this)
-├── rsa_key.pub         # RSA public key (generate this)
-├── env.template         # Environment template
-└── README.md           # This file
-```
-
-## ⚙️ Configuration Reference
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SNOWFLAKE_ACCOUNT_LOCATOR` | Account locator for JWT auth | `ABC12345` |
-| `SNOWFLAKE_ACCOUNT` | Full account for API URL (use hyphens) | `MYORG-MYACCOUNT` |
-| `SNOWFLAKE_USER` | Snowflake username | `my_user` |
-| `PRIVATE_KEY_PATH` | Path to RSA private key | `rsa_key.p8` |
-| `AGENT_DATABASE` | Database containing the Cortex Agent | `MY_DATABASE` |
-| `AGENT_SCHEMA` | Schema containing the Cortex Agent | `MY_SCHEMA` |
-| `AGENT_NAME` | Name of the Cortex Agent | `MY_AGENT` |
-| `AGENT_DESCRIPTION` | (Optional) Custom agent description | `My AI assistant` |
-| `AGENT_URL` | (Optional) Public URL of this service | `http://localhost:8000` |
-
-## 🔐 Security Notes
-
-- **Never commit** `.env`, `rsa_key.p8`, or `rsa_key.pub` to version control
-- The `.gitignore` file is configured to exclude sensitive files
-- JWT tokens expire after 1 hour and are regenerated per request
-- Use HTTPS in production deployments
-
-## 🔧 Troubleshooting
-
-### JWT Token Invalid (390144)
-
-**Cause:** Account identifier format mismatch or key not configured.
-
-**Solution:**
-1. Verify public key fingerprint matches in Snowflake: `DESC USER your_username;`
-2. Ensure `SNOWFLAKE_ACCOUNT_LOCATOR` uses the short account locator
-3. Ensure `SNOWFLAKE_ACCOUNT` uses hyphens, not underscores
-
-### SSL Certificate Error
-
-**Cause:** Account name contains underscores.
-
-**Solution:** Replace ALL underscores with hyphens in `SNOWFLAKE_ACCOUNT`:
-```
-# Wrong: MYORG-MYACCOUNT_US_WEST_2
-# Correct: MYORG-MYACCOUNT-US-WEST-2
-```
-
-### Connection Refused
-
-**Cause:** Server not running or wrong port.
-
-**Solution:**
-1. Verify server is running: `python main.py`
-2. Check logs for startup errors
-3. Ensure port 8000 is not in use
-
-### Empty Response
-
-**Cause:** SSE streaming not parsed correctly.
-
-**Solution:** Check that the Cortex Agent is returning valid SSE events. The executor parses `response.text.delta` events.
-
-### Agent Not Found (404)
-
-**Cause:** Incorrect agent path or agent doesn't exist.
-
-**Solution:**
-1. Verify the agent exists: `SHOW AGENTS IN SCHEMA {db}.{schema};`
-2. Check `AGENT_DATABASE`, `AGENT_SCHEMA`, and `AGENT_NAME` in `.env`
-3. Ensure the user has access to the agent
-
-## 🔄 Connecting Multiple Agents
-
-To expose multiple Cortex Agents, run multiple instances with different configurations:
-
-```bash
-# Agent 1
-AGENT_NAME=SALES_AGENT PORT=8001 python main.py &
-
-# Agent 2  
-AGENT_NAME=SUPPORT_AGENT PORT=8002 python main.py &
-```
-
-Or use Docker Compose with multiple services.
-
-## 📚 Resources
-
-- [A2A Protocol Specification](https://github.com/google/a2a)
-- [Snowflake Cortex Agent Documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents)
-- [Cortex Agents API Reference](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-rest-api)
-- [Snowflake Key-Pair Authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth)
-
-
-## 📄 License
-
-MIT License - See LICENSE file for details.
-
----
-
-Built with ❄️ Snowflake Cortex and the A2A Protocol
+- [A2A Protocol](https://github.com/google/a2a)
+- [Snowflake Cortex Agents](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents)
+- [Snowpark Container Services](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/overview)
+- [Snowflake Key-Pair Auth](https://docs.snowflake.com/en/user-guide/key-pair-auth)

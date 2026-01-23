@@ -1,11 +1,51 @@
 """
 Authentication module for Snowflake Cortex A2A Agent.
-Handles JWT generation using Key-Pair authentication.
+Supports both SPCS session token and Key-Pair JWT authentication.
 """
+import os
 import time
 import base64
 import jwt
 from cryptography.hazmat.primitives import serialization, hashes
+
+# SPCS token file path (standard location in Snowpark Container Services)
+SPCS_TOKEN_PATH = "/snowflake/session/token"
+
+
+def is_running_in_spcs() -> bool:
+    """
+    Check if the application is running inside Snowpark Container Services.
+    
+    Returns:
+        True if running in SPCS, False otherwise
+    """
+    return os.path.exists(SPCS_TOKEN_PATH)
+
+
+def get_spcs_session_token() -> str:
+    """
+    Read the SPCS session token from the standard token file.
+    
+    In SPCS, Snowflake automatically provisions a session token at
+    /snowflake/session/token that can be used for authentication.
+    
+    Returns:
+        The session token string
+    
+    Raises:
+        ValueError: If token file is not found or empty
+    """
+    try:
+        with open(SPCS_TOKEN_PATH, "r") as token_file:
+            token = token_file.read().strip()
+            if not token:
+                raise ValueError("SPCS session token file is empty")
+            return token
+    except FileNotFoundError:
+        raise ValueError(
+            f"SPCS session token not found at {SPCS_TOKEN_PATH}. "
+            "Make sure you are running inside Snowpark Container Services."
+        )
 
 
 def generate_snowflake_jwt(account: str, user: str, private_key_path: str) -> str:
@@ -64,3 +104,36 @@ def generate_snowflake_jwt(account: str, user: str, private_key_path: str) -> st
     # Sign Token
     token = jwt.encode(payload, private_key, algorithm="RS256")
     return token
+
+
+def get_auth_token_and_type() -> tuple[str, str]:
+    """
+    Get the appropriate authentication token based on the environment.
+    
+    When running in SPCS, uses the session token.
+    When running locally, uses JWT key-pair authentication.
+    
+    Returns:
+        Tuple of (token, token_type) where token_type is either
+        'OAUTH' for SPCS or 'KEYPAIR_JWT' for local
+    
+    Raises:
+        ValueError: If authentication cannot be established
+    """
+    if is_running_in_spcs():
+        token = get_spcs_session_token()
+        return token, "OAUTH"
+    else:
+        # Fall back to JWT key-pair auth for local development
+        account_locator = os.getenv("SNOWFLAKE_ACCOUNT_LOCATOR")
+        user = os.getenv("SNOWFLAKE_USER")
+        key_path = os.getenv("PRIVATE_KEY_PATH")
+        
+        if not all([account_locator, user, key_path]):
+            raise ValueError(
+                "For local development, SNOWFLAKE_ACCOUNT_LOCATOR, "
+                "SNOWFLAKE_USER, and PRIVATE_KEY_PATH must be set"
+            )
+        
+        token = generate_snowflake_jwt(account_locator, user, key_path)
+        return token, "KEYPAIR_JWT"

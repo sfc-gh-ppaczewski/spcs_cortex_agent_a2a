@@ -15,12 +15,12 @@ An Agent-to-Agent (A2A) protocol wrapper for Snowflake Cortex Agents deployed on
 
 ## Prerequisites
 
+- Python 3.11+
 - Docker (podman can be sufficient too but some command would need to be altered)
-- Snowflake account with:
-  - SPCS enabled
-  - A deployed Cortex Agent
-  - ACCOUNTADMIN role (or role with SPCS privileges)
-- SnowCLI installed
+- Snowflake account, note that trial accounts do not support SPCS
+- Deployed Cortex Agent
+- SnowCLI installed with configured connection https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/connect
+
 
 ## Configuration Parameters
 
@@ -34,7 +34,43 @@ Before deploying, gather the following information:
 
 ## Deployment
 
-### Step 1: Create Snowflake Resources
+### Step 1: Clone and Setup Environment
+
+```bash
+cd spcs_cortex_agent_a2a
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Step 2: Generate RSA Key Pair (if needed)
+
+```bash
+# Generate private key
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+
+# Generate public key
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+
+# Get the public key content (for Snowflake)
+grep -v "BEGIN\|END" rsa_key.pub | tr -d '\n'
+```
+
+### Step 3: Configure Snowflake User
+
+Run this SQL in Snowflake (replace with your public key):
+
+```sql
+ALTER USER your_username SET RSA_PUBLIC_KEY='MIIBIjANBgkq...your_public_key...AQAB';
+
+-- Verify the key is set
+DESC USER your_username;
+-- Look for RSA_PUBLIC_KEY_FP
+```
+
+### Step 4: Create Snowflake Resources
+
+Run this SQL in Snowflake (replace <AGENT_DATABASE> and <AGENT_SCHEMA>)
 
 ```sql
 -- Set your context
@@ -57,7 +93,7 @@ CREATE IMAGE REPOSITORY IF NOT EXISTS A2A_IMAGES;
 SHOW IMAGE REPOSITORIES LIKE 'A2A_IMAGES';
 ```
 
-### Step 2: Build and Push Docker Image
+### Step 5: Build and Push Docker Image
 
 ```bash
 # Build the image
@@ -71,7 +107,7 @@ docker tag cortex-a2a-agent:latest <repository_url>/cortex-a2a-agent:latest
 docker push <repository_url>/cortex-a2a-agent:latest
 ```
 
-### Step 3: Create the Service
+### Step 6: Create the Service
 
 ```sql
 -- Create service (replace <AGENT_DATABASE>, <AGENT_SCHEMA>, <AGENT_NAME>)
@@ -103,7 +139,7 @@ $$
     MAX_INSTANCES = 1;
 ```
 
-### Step 4: Get Your Public Endpoint
+### Step 7: Get Your Public Endpoint
 
 ```sql
 -- Check service status (wait for READY)

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Test client for the Snowflake Cortex A2A Agent.
+Test client for the Snowflake Cortex A2A Agent deployed on SPCS.
 
-This script demonstrates how to interact with the A2A server using the A2A SDK client.
-Make sure the server is running before executing this script.
+This script demonstrates how to interact with the A2A server using JWT authentication.
+Requires environment variables to be set for SPCS authentication.
+
+Required Environment Variables:
+    INGRESS_URL     - The SPCS public endpoint (from SHOW ENDPOINTS IN SERVICE)
+    ACCOUNT_LOCATOR - Your Snowflake account locator (SELECT CURRENT_ACCOUNT())
+    USERNAME        - Your Snowflake username (SELECT CURRENT_USER())
 
 Usage:
     python test_a2a.py [--query "Your question here"]
@@ -11,29 +16,41 @@ Usage:
 Examples:
     python test_a2a.py
     python test_a2a.py --query "Who are the top scorers?"
-    python test_a2a.py --url http://localhost:8001 --query "Hello"
+    python test_a2a.py --url https://my-endpoint.snowflakecomputing.app --query "Hello"
 """
 
 import asyncio
 import argparse
 import json
+import os
 import uuid
 import httpx
 
-
-BASE_URL = "http://localhost:8000"
-AGENT_CARD_PATH = "/.well-known/agent.json"
+from auth import generate_snowflake_jwt
 
 
-async def fetch_agent_card(base_url: str) -> dict:
+AGENT_CARD_PATH = "/.well-known/agent-card.json"
+DEFAULT_PRIVATE_KEY_PATH = "rsa_key.p8"
+
+
+def get_auth_headers(account_locator: str, username: str, private_key_path: str) -> dict:
+    """Generate authentication headers for SPCS endpoint."""
+    token = generate_snowflake_jwt(account_locator, username, private_key_path)
+    return {
+        "Authorization": f'Snowflake Token="{token}"',
+        "Content-Type": "application/json"
+    }
+
+
+async def fetch_agent_card(base_url: str, headers: dict) -> dict:
     """Fetch the agent card from the server."""
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{base_url}{AGENT_CARD_PATH}")
+        response = await client.get(f"{base_url}{AGENT_CARD_PATH}", headers=headers)
         response.raise_for_status()
         return response.json()
 
 
-async def send_message(base_url: str, query: str) -> dict:
+async def send_message(base_url: str, query: str, headers: dict) -> dict:
     """Send a JSON-RPC message to the agent."""
     
     request_payload = {
@@ -58,13 +75,13 @@ async def send_message(base_url: str, query: str) -> dict:
         response = await client.post(
             f"{base_url}/",
             json=request_payload,
-            headers={"Content-Type": "application/json"}
+            headers=headers
         )
         response.raise_for_status()
         return response.json()
 
 
-async def send_message_stream(base_url: str, query: str):
+async def send_message_stream(base_url: str, query: str, headers: dict):
     """Send a streaming JSON-RPC message to the agent and yield chunks."""
     
     request_payload = {
@@ -85,12 +102,14 @@ async def send_message_stream(base_url: str, query: str):
         }
     }
     
+    stream_headers = {**headers, "Accept": "text/event-stream"}
+    
     async with httpx.AsyncClient(timeout=120.0) as client:
         async with client.stream(
             "POST",
             f"{base_url}/",
             json=request_payload,
-            headers={"Content-Type": "application/json", "Accept": "text/event-stream"}
+            headers=stream_headers
         ) as response:
             response.raise_for_status()
             
@@ -105,13 +124,18 @@ async def send_message_stream(base_url: str, query: str):
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Test the Snowflake Cortex A2A Agent",
+        description="Test the Snowflake Cortex A2A Agent on SPCS",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Environment Variables:
+  INGRESS_URL      - SPCS public endpoint (from SHOW ENDPOINTS IN SERVICE)
+  ACCOUNT_LOCATOR  - Snowflake account locator (SELECT CURRENT_ACCOUNT())
+  USERNAME         - Snowflake username (SELECT CURRENT_USER())
+
 Examples:
   python test_a2a.py
   python test_a2a.py --query "What data do you have?"
-  python test_a2a.py --url http://localhost:8001
+  python test_a2a.py --url https://my-endpoint.snowflakecomputing.app
         """
     )
     parser.add_argument(
@@ -123,8 +147,26 @@ Examples:
     parser.add_argument(
         "--url",
         type=str,
-        default=BASE_URL,
-        help="The base URL of the A2A server (default: http://localhost:8000)"
+        default=None,
+        help="The base URL of the A2A server (default: https://$INGRESS_URL)"
+    )
+    parser.add_argument(
+        "--account",
+        type=str,
+        default=None,
+        help="Snowflake account locator (default: $ACCOUNT_LOCATOR)"
+    )
+    parser.add_argument(
+        "--user",
+        type=str,
+        default=None,
+        help="Snowflake username (default: $USERNAME)"
+    )
+    parser.add_argument(
+        "--key",
+        type=str,
+        default=DEFAULT_PRIVATE_KEY_PATH,
+        help=f"Path to RSA private key (default: {DEFAULT_PRIVATE_KEY_PATH})"
     )
     parser.add_argument(
         "--card-only",
@@ -143,17 +185,55 @@ Examples:
     )
     args = parser.parse_args()
     
-    print("\n🔷 Snowflake Cortex A2A Agent Test Client")
-    print(f"   Server: {args.url}")
+    # Get configuration from args or environment
+    ingress_url = args.url or os.environ.get("INGRESS_URL")
+    account_locator = args.account or os.environ.get("ACCOUNT_LOCATOR")
+    username = args.user or os.environ.get("USERNAME")
+    private_key_path = args.key
+    
+    # Validate required parameters
+    missing = []
+    if not ingress_url:
+        missing.append("INGRESS_URL (or --url)")
+    if not account_locator:
+        missing.append("ACCOUNT_LOCATOR (or --account)")
+    if not username:
+        missing.append("USERNAME (or --user)")
+    
+    if missing:
+        print("\n❌ Missing required configuration:")
+        for m in missing:
+            print(f"   - {m}")
+        print("\nSet environment variables or use command-line arguments.")
+        print("See --help for details.")
+        return
+    
+    # Build the base URL
+    base_url = ingress_url if ingress_url.startswith("https://") else f"https://{ingress_url}"
+    
+    # Check private key exists
+    if not os.path.exists(private_key_path):
+        print(f"\n❌ Private key not found: {private_key_path}")
+        print("\nGenerate RSA key pair with:")
+        print("  openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt")
+        return
+    
+    print("\n🔷 Snowflake Cortex A2A Agent Test Client (SPCS)")
+    print(f"   Endpoint: {base_url}")
+    print(f"   Account:  {account_locator}")
+    print(f"   User:     {username}")
     print()
     
     try:
+        # Generate auth headers
+        headers = get_auth_headers(account_locator, username, private_key_path)
+        
         # Fetch the agent card
         print("=" * 60)
         print("📋 Fetching Agent Card...")
         print("=" * 60)
         
-        agent_card = await fetch_agent_card(args.url)
+        agent_card = await fetch_agent_card(base_url, headers)
         
         print(f"Name: {agent_card.get('name', 'N/A')}")
         print(f"Description: {agent_card.get('description', 'N/A')}")
@@ -183,7 +263,7 @@ Examples:
             full_text = ""
             chunk_count = 0
             
-            async for event in send_message_stream(args.url, args.query):
+            async for event in send_message_stream(base_url, args.query, headers):
                 chunk_count += 1
                 
                 # Handle different event types
@@ -219,7 +299,7 @@ Examples:
         
         else:
             # Non-streaming mode
-            response = await send_message(args.url, args.query)
+            response = await send_message(base_url, args.query, headers)
             
             # Check for errors
             if "error" in response:
@@ -247,13 +327,18 @@ Examples:
         print("\n✅ Test completed successfully!")
             
     except httpx.ConnectError:
-        print(f"\n❌ Connection Error: Could not connect to {args.url}")
-        print("\nMake sure the A2A server is running:")
-        print("  source venv/bin/activate")
-        print("  python main.py")
+        print(f"\n❌ Connection Error: Could not connect to {base_url}")
+        print("\nCheck that:")
+        print("  1. The SPCS service is running (SELECT SYSTEM$GET_SERVICE_STATUS('...'))")
+        print("  2. The INGRESS_URL is correct (SHOW ENDPOINTS IN SERVICE ...)")
     except httpx.HTTPStatusError as e:
         print(f"\n❌ HTTP Error: {e.response.status_code}")
         print(f"   {e.response.text}")
+        if e.response.status_code == 401:
+            print("\nAuthentication failed. Check that:")
+            print("  1. Your RSA public key is registered with your Snowflake user")
+            print("  2. The ACCOUNT_LOCATOR and USERNAME are correct")
+            print("  3. The JWT token hasn't expired (tokens last 1 hour)")
     except Exception as e:
         print(f"\n❌ Error: {type(e).__name__}: {e}")
         raise

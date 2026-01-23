@@ -102,11 +102,14 @@ SHOW IMAGE REPOSITORIES LIKE 'A2A_IMAGES';
 # Set repository URL from Step 4 (paste the repository_url value here once)
 export REPO_URL="<repository_url>"
 
+# Set your SnowCLI connection name
+export SNOW_CONNECTION="<YOUR_CONNECTION>"
+
 # Build the image
 docker build --platform linux/amd64 -t cortex-a2a-agent:latest .
 
-# Login to Snowflake registry (replace <YOUR_CONNECTION> with SnowCLI connection)
-snow spcs image-registry login --connection <YOUR_CONNECTION>
+# Login to Snowflake registry
+snow spcs image-registry login --connection $SNOW_CONNECTION
 
 # Tag and push (uses REPO_URL variable)
 docker tag cortex-a2a-agent:latest $REPO_URL/cortex-a2a-agent:latest
@@ -142,6 +145,7 @@ spec:
       port: 8000
       public: true
 $$
+    AUTO_SUSPEND_SECS = 172800
     MIN_INSTANCES = 1
     MAX_INSTANCES = 1;
 ```
@@ -164,7 +168,7 @@ The SPCS public endpoint requires Snowflake authentication via JWT token.
 ### Set Environment Variables
 
 ```bash
-# Set these once (paste the ingress_url from Step 7)
+# Ingress url: (paste the ingress_url from Step 7)
 export INGRESS_URL="<ingress_url>"
 
 # Account locator: run SELECT CURRENT_ACCOUNT(); in Snowflake
@@ -248,6 +252,27 @@ response = requests.post(
     }
 )
 print(response.json())
+```
+
+# 🧪 Testing with test_a2a.py
+
+A lightweight test client is included to verify the A2A server is working correctly.
+
+### Basic Usage
+
+```bash
+# In terminal, run the test client
+python test_a2a.py
+```
+
+### Examples
+
+```bash
+# Send a custom query
+python test_a2a.py --query "Show me all players from Real Madrid"
+
+# Just check the agent card (discovery endpoint)
+python test_a2a.py --card-only
 ```
 
 ## Service Management

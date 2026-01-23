@@ -16,7 +16,7 @@ The A2A client connects to the A2A wrapper via a **public SPCS endpoint** using 
 ## Prerequisites
 
 - Python 3.11+
-- Docker (podman can be sufficient too but some command would need to be altered)
+- Docker (podman can be used an alternative but commands would need to be altered)
 - Snowflake account, note that trial accounts do not support SPCS
 - Deployed Cortex Agent
 - SnowCLI installed with configured connection https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/connect
@@ -91,22 +91,26 @@ CREATE COMPUTE POOL IF NOT EXISTS A2A_AGENT_POOL
 -- Create image repository
 CREATE IMAGE REPOSITORY IF NOT EXISTS A2A_IMAGES;
 
--- Get repository URL (save this for Step 2)
+-- Get repository URL (needed for Step 5)
 SHOW IMAGE REPOSITORIES LIKE 'A2A_IMAGES';
+-- Copy the 'repository_url' value from the output
 ```
 
 ### Step 5: Build and Push Docker Image
 
 ```bash
+# Set repository URL from Step 4 (paste the repository_url value here once)
+export REPO_URL="<repository_url>"
+
 # Build the image
 docker build --platform linux/amd64 -t cortex-a2a-agent:latest .
 
 # Login to Snowflake registry (replace <YOUR_CONNECTION> with SnowCLI connection)
 snow spcs image-registry login --connection <YOUR_CONNECTION>
 
-# Tag and push (replace <repository_url> with value from Step 1)
-docker tag cortex-a2a-agent:latest <repository_url>/cortex-a2a-agent:latest
-docker push <repository_url>/cortex-a2a-agent:latest
+# Tag and push (uses REPO_URL variable)
+docker tag cortex-a2a-agent:latest $REPO_URL/cortex-a2a-agent:latest
+docker push $REPO_URL/cortex-a2a-agent:latest
 ```
 
 ### Step 6: Create the Service
@@ -157,32 +161,42 @@ SHOW ENDPOINTS IN SERVICE CORTEX_A2A_AGENT;
 
 The SPCS public endpoint requires Snowflake authentication via JWT token.
 
-### Generate JWT Token
+### Set Environment Variables
 
 ```bash
-# Setup (one-time)
-python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+# Set these once (paste the ingress_url from Step 7)
+export INGRESS_URL="<ingress_url>"
 
+# Account locator: run SELECT CURRENT_ACCOUNT(); in Snowflake
+export ACCOUNT_LOCATOR="<account_locator>"
+
+# Username: run SELECT CURRENT_USER(); in Snowflake
+export USERNAME="<username>"
+```
+
+### Generate JWT Token
+
+The token is short-lived (1 hour) based on the config from file auth.py
+
+```bash
 # Generate token
 TOKEN=$(python3 -c "
 from auth import generate_snowflake_jwt
-print(generate_snowflake_jwt('<ACCOUNT_LOCATOR>', '<USERNAME>', 'rsa_key.p8'))
+print(generate_snowflake_jwt('$ACCOUNT_LOCATOR', '$USERNAME', 'rsa_key.p8'))
 ")
 ```
-
-> **Note:** You need an RSA key pair configured for your Snowflake user. See [Snowflake Key-Pair Authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth).
 
 ### Discovery Endpoint
 
 ```bash
 curl -H "Authorization: Snowflake Token=\"$TOKEN\"" \
-  https://<ingress_url>/.well-known/agent-card.json
+  https://$INGRESS_URL/.well-known/agent-card.json
 ```
 
 ### Send a Query
 
 ```bash
-curl -X POST https://<ingress_url>/ \
+curl -X POST https://$INGRESS_URL/ \
   -H "Authorization: Snowflake Token=\"$TOKEN\"" \
   -H "Content-Type: application/json" \
   -d '{
@@ -202,11 +216,16 @@ curl -X POST https://<ingress_url>/ \
 ### Python Example
 
 ```python
+import os
 import requests
 from auth import generate_snowflake_jwt
 
-ENDPOINT = "https://<ingress_url>"
-token = generate_snowflake_jwt("<account_locator>", "<username>", "rsa_key.p8")
+ENDPOINT = f"https://{os.environ['INGRESS_URL']}"
+token = generate_snowflake_jwt(
+    os.environ["ACCOUNT_LOCATOR"],
+    os.environ["USERNAME"],
+    "rsa_key.p8"
+)
 headers = {
     "Content-Type": "application/json",
     "Authorization": f'Snowflake Token="{token}"'

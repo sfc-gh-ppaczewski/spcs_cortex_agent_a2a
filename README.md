@@ -145,7 +145,6 @@ spec:
       port: 8000
       public: true
 $$
-    AUTO_SUSPEND_SECS = 172800
     MIN_INSTANCES = 1
     MAX_INSTANCES = 1;
 ```

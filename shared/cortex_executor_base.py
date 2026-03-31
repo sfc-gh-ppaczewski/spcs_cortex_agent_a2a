@@ -8,7 +8,7 @@ Subclasses set two class attributes to specialise behaviour:
 import os
 import json
 import uuid
-import requests
+import httpx
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -16,6 +16,19 @@ from a2a.types import Message, TextPart, TaskStatus, TaskState
 
 from auth import get_auth_token_and_type
 from response_cleaner import clean_response
+
+
+def _extract_text_from_message(message) -> str:
+    """Extract the first text part from an A2A message. Returns 'Hello' if none found."""
+    if not message or not message.parts:
+        return "Hello"
+    for part in message.parts:
+        actual_part = getattr(part, "root", part)
+        if isinstance(actual_part, TextPart):
+            return actual_part.text
+        if hasattr(actual_part, "text"):
+            return actual_part.text
+    return "Hello"
 
 
 class CortexExecutorBase(AgentExecutor):
@@ -29,6 +42,9 @@ class CortexExecutorBase(AgentExecutor):
         self.schema = os.getenv("AGENT_SCHEMA")
         self.agent_name = os.getenv("AGENT_NAME")
 
+        if not self.agent_name:
+            raise ValueError("AGENT_NAME environment variable must be set")
+
         snowflake_host = os.getenv("SNOWFLAKE_HOST")
         snowflake_port = os.getenv("SNOWFLAKE_PORT", "443")
 
@@ -36,7 +52,7 @@ class CortexExecutorBase(AgentExecutor):
             raise ValueError("SNOWFLAKE_HOST must be set in SPCS environment")
 
         base = f"https://{snowflake_host}"
-        if snowflake_port != "443":
+        if int(snowflake_port) != 443:
             base = f"https://{snowflake_host}:{snowflake_port}"
 
         self.api_url = (
@@ -48,11 +64,11 @@ class CortexExecutorBase(AgentExecutor):
         print(f"  Agent: {self.db}.{self.schema}.{self.agent_name}")
         print(f"  Endpoint: {self.api_url}")
 
-    def _parse_sse_response(self, response) -> str:
-        """Parse SSE streaming response from Cortex."""
+    def _parse_sse_response(self, text: str) -> str:
+        """Parse SSE response text from Cortex."""
         full_text = ""
-        for line in response.iter_lines(decode_unicode=True):
-            if line and line.startswith("data:"):
+        for line in text.split("\n"):
+            if line.startswith("data:"):
                 try:
                     data = json.loads(line[5:].strip())
                     if "text" in data:
@@ -64,17 +80,7 @@ class CortexExecutorBase(AgentExecutor):
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Main entry point called by A2A Protocol when a task is received."""
         try:
-            incoming_text = "Hello"
-
-            if context.message and context.message.parts:
-                for part in context.message.parts:
-                    actual_part = getattr(part, "root", part)
-                    if isinstance(actual_part, TextPart):
-                        incoming_text = actual_part.text
-                        break
-                    elif hasattr(actual_part, "text"):
-                        incoming_text = actual_part.text
-                        break
+            incoming_text = _extract_text_from_message(context.message)
 
             print(f"[{self._agent_label}] Received query: {incoming_text}")
 
@@ -96,23 +102,29 @@ class CortexExecutorBase(AgentExecutor):
             }
 
             print(f"[{self._agent_label}] Calling Snowflake Cortex API...")
-            response = requests.post(
-                self.api_url, json=payload, headers=headers, timeout=120, stream=True
-            )
+
+            async with httpx.AsyncClient(timeout=120) as client:
+                response = await client.post(self.api_url, json=payload, headers=headers)
 
             if response.status_code != 200:
                 print(
                     f"[{self._agent_label}] Snowflake API Error "
                     f"{response.status_code}: {response.text}"
                 )
+                error_msg = Message(
+                    messageId=str(uuid.uuid4()),
+                    role="agent",
+                    parts=[TextPart(text=f"Cortex API error {response.status_code}.")],
+                )
+                await event_queue.enqueue_event(error_msg)
                 await event_queue.enqueue_event(TaskStatus(state=TaskState.failed))
                 return
 
-            content_type = response.headers.get("Content-Type", "")
+            content_type = response.headers.get("content-type", "")
 
             if "text/event-stream" in content_type:
-                print(f"[{self._agent_label}] Receiving streaming response from Cortex...")
-                final_answer = self._parse_sse_response(response)
+                print(f"[{self._agent_label}] Parsing SSE response from Cortex...")
+                final_answer = self._parse_sse_response(response.text)
             else:
                 data = response.json()
                 final_answer = self._fallback_message
@@ -142,6 +154,12 @@ class CortexExecutorBase(AgentExecutor):
 
         except Exception as e:
             print(f"[{self._agent_label}] Execution error: {str(e)}")
+            error_msg = Message(
+                messageId=str(uuid.uuid4()),
+                role="agent",
+                parts=[TextPart(text=f"An error occurred: {str(e)}")],
+            )
+            await event_queue.enqueue_event(error_msg)
             await event_queue.enqueue_event(TaskStatus(state=TaskState.failed))
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

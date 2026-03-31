@@ -3,7 +3,6 @@ A2A client for calling the Snowflake Cortex A2A agent (SPCS-to-SPCS).
 """
 import os
 import uuid
-import json
 
 import httpx
 from a2a.client import A2AClient
@@ -13,10 +12,6 @@ from a2a.types import (
     MessageSendParams,
     SendMessageSuccessResponse,
     Task,
-    TaskState,
-    GetTaskRequest,
-    TaskQueryParams,
-    GetTaskSuccessResponse,
     Message,
 )
 
@@ -24,7 +19,7 @@ from a2a.types import (
 class SnowflakeA2AClient:
     """Sends queries to the Snowflake Cortex A2A agent via A2A protocol."""
 
-    def __init__(self, url: str = None):
+    def __init__(self, url: str | None = None):
         self.agent_url = url or os.getenv(
             "SNOWFLAKE_A2A_AGENT_URL", "http://cortex-a2a-agent:8000"
         )

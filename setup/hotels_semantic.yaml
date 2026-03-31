@@ -183,7 +183,7 @@ tables:
           - "arrival"
         description: "Available check-in date"
         expr: CHECK_IN_DATE
-        data_type: TEXT
+        data_type: DATE
 
       - name: CHECK_OUT_DATE
         synonyms:
@@ -193,4 +193,4 @@ tables:
           - "departure"
         description: "Available check-out date"
         expr: CHECK_OUT_DATE
-        data_type: TEXT
+        data_type: DATE

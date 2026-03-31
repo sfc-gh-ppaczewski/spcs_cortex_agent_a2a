@@ -204,6 +204,10 @@ CREATE STAGE IF NOT EXISTS TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS
 -- Verify upload:
 --   LIST @TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS;
 
+CREATE STAGE IF NOT EXISTS TRAVEL_DEMO.AGENTS.LLM_MODELS
+    ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
+    COMMENT = 'Stores GGUF model files downloaded by DOWNLOAD_LLM_MODEL() for the SPCS llama.cpp server';
+
 -- ============================================================================
 -- 8. CORTEX SEARCH SERVICES
 -- ============================================================================

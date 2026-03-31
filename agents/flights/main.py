@@ -28,7 +28,7 @@ def get_service_url() -> str:
 
     service_name = os.getenv("SNOWFLAKE_SERVICE_NAME")
     if service_name:
-        return f"https://{service_name}:8001"
+        return f"https://{service_name}"
 
     return "http://0.0.0.0:8001"
 

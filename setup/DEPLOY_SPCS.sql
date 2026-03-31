@@ -98,8 +98,8 @@ spec:
     - name: hotels-agent
       image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/hotels-agent:latest
       env:
-        AGENT_DATABASE: TRAVEL_DEMO
-        AGENT_SCHEMA: AGENTS
+        AGENT_DATABASE: <AGENT_DATABASE>
+        AGENT_SCHEMA: <AGENT_SCHEMA>
         AGENT_NAME: HOTELS_BOOKING_AGENT
         AGENT_DESCRIPTION: "Senior Hotel Concierge answering questions about hotel availability, pricing, amenities, and guest reviews."
       resources:
@@ -113,11 +113,10 @@ spec:
     - name: flights-agent
       image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/flights-agent:latest
       env:
-        AGENT_DATABASE: TRAVEL_DEMO
-        AGENT_SCHEMA: AGENTS
+        AGENT_DATABASE: <AGENT_DATABASE>
+        AGENT_SCHEMA: <AGENT_SCHEMA>
         AGENT_NAME: FLIGHTS_BOOKING_AGENT
         AGENT_DESCRIPTION: "Senior Flight Booking Specialist answering questions about flight availability, fares, schedules, and passenger feedback."
-        SPCS_SERVICE_URL: "http://travel-a2a-agent:8001"
       resources:
         requests:
           cpu: 0.5

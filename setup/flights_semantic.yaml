@@ -199,7 +199,7 @@ tables:
           - "leaving time"
         description: "Scheduled departure date and time"
         expr: DEPARTURE_TIME
-        data_type: TEXT
+        data_type: TIMESTAMP
 
       - name: ARRIVAL_TIME
         synonyms:
@@ -210,4 +210,4 @@ tables:
           - "landing time"
         description: "Scheduled arrival date and time"
         expr: ARRIVAL_TIME
-        data_type: TEXT
+        data_type: TIMESTAMP

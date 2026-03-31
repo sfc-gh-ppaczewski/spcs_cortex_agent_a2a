@@ -17,7 +17,6 @@ COPY shared/ .
 # Agent-specific files
 COPY agents/hotels/main.py .
 COPY agents/hotels/executor.py .
-COPY agents/hotels/test_hotels_agent.py .
 
 EXPOSE 8000
 

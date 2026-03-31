@@ -409,22 +409,7 @@ DROP COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL;
 
 ---
 
-## Troubleshooting
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| Service not starting | Compute pool not ready | Wait for `DESCRIBE COMPUTE POOL` to show ACTIVE/IDLE |
-| 401 Unauthorized | Invalid/expired token | Regenerate JWT token (expires after 1 hour) |
-| Internal error | Missing SNOWFLAKE_HOST | Do not set SNOWFLAKE_HOST manually — let SPCS provide it |
-| Agent not found (404) | Wrong agent path | Verify with `SHOW AGENTS IN SCHEMA TRAVEL_DEMO.AGENTS;` |
-| Hotels agent unreachable | Wrong service name in DNS | Internal DNS uses lowercase service name (`travel-a2a-agent`) |
-| Flights agent unreachable | Port 8001 not declared | Ensure `flights-api` endpoint is declared in service spec |
-
----
-
 ## Resources
-
-- [A2A Protocol](https://github.com/google/a2a)
 - [Snowflake Cortex Agents](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents)
 - [Snowpark Container Services](https://docs.snowflake.com/en/developer-guide/snowpark-container-services/overview)
 - [Snowflake Cortex Analyst](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst)

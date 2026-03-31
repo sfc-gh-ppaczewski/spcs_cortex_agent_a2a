@@ -1,12 +1,7 @@
 """
 Authentication module for Snowflake Cortex A2A agents (SPCS runtime).
 """
-import base64
 import os
-import time
-
-import jwt
-from cryptography.hazmat.primitives import hashes, serialization
 
 SPCS_TOKEN_PATH = "/snowflake/session/token"
 
@@ -36,6 +31,12 @@ def get_spcs_session_token() -> str:
 
 def generate_snowflake_jwt(account: str, user: str, private_key_path: str) -> str:
     """Generate a Snowflake JWT for key-pair authentication."""
+    import base64
+    import time
+
+    import jwt
+    from cryptography.hazmat.primitives import hashes, serialization
+
     with open(private_key_path, "rb") as key_file:
         private_key = serialization.load_pem_private_key(key_file.read(), password=None)
 

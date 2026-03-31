@@ -18,15 +18,14 @@
 --   - Build and push Docker images (see instructions below)
 --   - For the orchestrator: run CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL(); to upload GGUF model
 --
--- Replace these placeholders before running:
---   <AGENT_DATABASE>  — e.g. TRAVEL_DEMO
---   <AGENT_SCHEMA>    — e.g. AGENTS
+-- Replace this placeholder before running:
 --   <REPO_URL>        — Image repository URL (from SHOW IMAGE REPOSITORIES)
+-- Database and schema are hardcoded to TRAVEL_DEMO.AGENTS.
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
-USE DATABASE <AGENT_DATABASE>;
-USE SCHEMA <AGENT_SCHEMA>;
+USE DATABASE TRAVEL_DEMO;
+USE SCHEMA AGENTS;
 
 -- ============================================================================
 -- 1. SHARED SPCS INFRASTRUCTURE
@@ -83,20 +82,20 @@ CREATE STAGE IF NOT EXISTS LLM_MODELS
 --   - flights-agent wraps FLIGHTS_BOOKING_AGENT (port 8001, internal)
 -- ============================================================================
 
-CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_AGENT_POOL
+CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_POOL
     MIN_NODES = 1
     MAX_NODES = 1
-    INSTANCE_FAMILY = CPU_X64_XS
+    INSTANCE_FAMILY = CPU_X64_S
     AUTO_RESUME = TRUE
     AUTO_SUSPEND_SECS = 1800;
 
 CREATE SERVICE TRAVEL_A2A_AGENT
-    IN COMPUTE POOL TRAVEL_AGENT_POOL
+    IN COMPUTE POOL TRAVEL_POOL
     FROM SPECIFICATION $$
 spec:
   containers:
     - name: hotels-agent
-      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/hotels-agent:latest
+      image: /TRAVEL_DEMO/AGENTS/A2A_IMAGES/hotels-agent:latest
       env:
         AGENT_DATABASE: TRAVEL_DEMO
         AGENT_SCHEMA: AGENTS
@@ -111,7 +110,7 @@ spec:
           memory: 1Gi
 
     - name: flights-agent
-      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/flights-agent:latest
+      image: /TRAVEL_DEMO/AGENTS/A2A_IMAGES/flights-agent:latest
       env:
         AGENT_DATABASE: TRAVEL_DEMO
         AGENT_SCHEMA: AGENTS
@@ -160,26 +159,16 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_A2A_AGENT;
 --       CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();
 
 -- Verify model is uploaded before proceeding:
--- LIST @<AGENT_DATABASE>.<AGENT_SCHEMA>.LLM_MODELS;
+-- LIST @TRAVEL_DEMO.AGENTS.LLM_MODELS;
 -- You should see: qwen2.5-1.5b-instruct-q4_k_m.gguf
 
-CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_ORCHESTRATOR_POOL
-    MIN_NODES = 1
-    MAX_NODES = 1
-    INSTANCE_FAMILY = CPU_X64_S   -- 2 vCPU, 8 GB RAM (sufficient for Q4 1.5B model)
-    AUTO_RESUME = TRUE
-    AUTO_SUSPEND_SECS = 1800;
-
--- If 8GB is tight, use CPU_X64_M (4 vCPU, 16 GB RAM) instead:
--- INSTANCE_FAMILY = CPU_X64_M
-
 CREATE SERVICE TRAVEL_ORCHESTRATOR
-    IN COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL
+    IN COMPUTE POOL TRAVEL_POOL
     FROM SPECIFICATION $$
 spec:
   containers:
     - name: llm-server
-      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/llama-cpp-server:latest
+      image: /TRAVEL_DEMO/AGENTS/A2A_IMAGES/llama-cpp-server:latest
       args:
         - "--model"
         - "/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
@@ -206,7 +195,7 @@ spec:
         path: /health
 
     - name: travel-orchestrator
-      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/travel-orchestrator-agent:latest
+      image: /TRAVEL_DEMO/AGENTS/A2A_IMAGES/travel-orchestrator-agent:latest
       env:
         AGENT_NAME: travel_orchestrator
         AGENT_DESCRIPTION: "Travel booking orchestrator that routes hotel questions to the Hotels Booking Agent and flight questions to the Flights Booking Agent via A2A protocol."
@@ -229,7 +218,7 @@ spec:
 
   volumes:
     - name: models
-      source: "@<AGENT_DATABASE>.<AGENT_SCHEMA>.LLM_MODELS"
+      source: "@TRAVEL_DEMO.AGENTS.LLM_MODELS"
 $$
     MIN_INSTANCES = 1
     MAX_INSTANCES = 1;
@@ -283,5 +272,4 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_ORCHESTRATOR;
 -- Delete everything
 -- DROP SERVICE TRAVEL_A2A_AGENT;
 -- DROP SERVICE TRAVEL_ORCHESTRATOR;
--- DROP COMPUTE POOL TRAVEL_AGENT_POOL;
--- DROP COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL;
+-- DROP COMPUTE POOL TRAVEL_POOL;

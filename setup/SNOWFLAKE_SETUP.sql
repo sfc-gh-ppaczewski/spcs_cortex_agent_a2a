@@ -13,9 +13,7 @@
 --     after running this script (see instructions at the bottom)
 --   - COMPUTE_WH warehouse must exist
 --
--- Replace <AGENT_DATABASE> and <AGENT_SCHEMA> below if you prefer a different
--- location for the SPCS image repository. The agent data always lives in
--- TRAVEL_DEMO.AGENTS.
+-- The SPCS image repository is created in TRAVEL_DEMO.AGENTS (same as the agent data).
 -- ============================================================================
 
 USE ROLE SYSADMIN;

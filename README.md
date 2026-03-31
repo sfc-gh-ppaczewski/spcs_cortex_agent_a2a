@@ -223,7 +223,7 @@ docker push $REPO_URL/llama-cpp-server:latest
 
 ## Step 5 — Deploy the TRAVEL_A2A_AGENT Service
 
-See `setup/DEPLOY_SPCS.sql` for the full SQL, replacing `<AGENT_DATABASE>` and `<AGENT_SCHEMA>`:
+See `setup/DEPLOY_SPCS.sql` for the full SQL (database and schema are hardcoded to `TRAVEL_DEMO.AGENTS`):
 
 ```sql
 CREATE SERVICE TRAVEL_A2A_AGENT

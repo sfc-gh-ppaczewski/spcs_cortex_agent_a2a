@@ -1,17 +1,45 @@
 # TravelDemo Cortex A2A Agent
 
-An Agent-to-Agent (A2A) protocol wrapper for Snowflake Cortex Agents deployed on **Snowpark Container Services (SPCS)**. This demo exposes two domain-specific Cortex Agents — a Hotels Booking Agent and a Flights Booking Agent — through the Google A2A protocol, with a local-LLM orchestrator that routes incoming questions automatically.
+An Agent-to-Agent (A2A) protocol wrapper for Snowflake Cortex Agents deployed on **Snowpark Container Services (SPCS)**. This demo exposes two domain-specific Cortex Agents — a Hotels Booking Agent and a Flights Booking Agent — through the Google A2A protocol. A Travel Orchestrator service runs a local LLM (Qwen2.5-1.5B via llama.cpp) to classify incoming queries and route them to the appropriate agent automatically.
 
 ## Architecture
 
 ```
-┌─────────────────┐  Public Endpoint  ┌──────────────────────┐  SPCS Session Token  ┌──────────────────────────┐
-│   A2A Client    │──────────────────▶│   A2A Wrapper        │─────────────────────▶│  Snowflake Cortex Agent  │
-│  (Other Agents) │    (JWT Auth)     │   (SPCS Service)     │                      │  (Hotels or Flights)     │
-└─────────────────┘                   └──────────────────────┘                      └──────────────────────────┘
+                                               SPCS Service (TRAVEL_ORCHESTRATOR)
+┌─────────────────┐  Public Endpoint  ┌─────────────────────────────────────────────────────┐
+│   A2A Client    │──────────────────▶│  ┌──────────────────┐  ┌──────────────────────────┐ │
+│  (Other Agents) │    (JWT Auth)     │  │ travel-orchestr. │─▶│       llm-server         │ │
+└─────────────────┘                   │  │  (Python, :9000) │  │  (llama.cpp, :8080)      │ │
+                                      │  │  3-way Router    │  │  Qwen2.5-1.5B (Q4_K_M)  │ │
+                                      │  └───┬──────────┬───┘  └──────────────────────────┘ │
+                                      └──────┼──────────┼────────────────────────────────────┘
+                                   HOTELS:   │          │ FLIGHTS:
+                                        (SPCS internal DNS)
+                                             │          │
+                             SPCS Service (TRAVEL_A2A_AGENT)
+                                    ┌────────┘          └────────┐
+                                    ▼                            ▼
+                    ┌───────────────────────────────────────────────────────┐
+                    │  ┌──────────────────────┐  ┌──────────────────────┐   │
+                    │  │    hotels-agent       │  │    flights-agent     │   │
+                    │  │  (Python, :8000)      │  │  (Python, :8001)     │   │
+                    │  │  public endpoint      │  │  internal only       │   │
+                    │  └──────────┬────────────┘  └──────────┬───────────┘   │
+                    └────────────┼──────────────────────────┼────────────────┘
+                                 │    SPCS Session Token    │
+                                 └──────────────┬───────────┘
+                                                ▼
+                                ┌────────────────────────────────┐
+                                │     Snowflake Cortex Agent     │
+                                │  HOTELS_BOOKING_AGENT  (:8000) │
+                                │  FLIGHTS_BOOKING_AGENT (:8001) │
+                                └────────────────────────────────┘
 ```
 
-The A2A client connects to the A2A wrapper via a **public SPCS endpoint** using JWT authentication. The wrapper uses the **SPCS session token** to authenticate with the Snowflake Cortex Agent on the internal network.
+The orchestrator uses the local LLM to classify each query:
+- `HOTELS:` → `hotels-agent` (:8000) — hotel availability, pricing, guest reviews
+- `FLIGHTS:` → `flights-agent` (:8001) — fares, routes, schedules, passenger feedback
+- General knowledge → answered directly by the local LLM
 
 ## Repository Structure
 
@@ -133,6 +161,12 @@ CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_AGENT_POOL
     INSTANCE_FAMILY = CPU_X64_XS
     AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 1800;
 
+-- Compute pool for the Travel Orchestrator (needs more RAM for local LLM)
+CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_ORCHESTRATOR_POOL
+    MIN_NODES = 1 MAX_NODES = 1
+    INSTANCE_FAMILY = CPU_X64_S
+    AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 1800;
+
 -- Image repository
 CREATE IMAGE REPOSITORY IF NOT EXISTS A2A_IMAGES;
 
@@ -160,6 +194,16 @@ docker push $REPO_URL/hotels-agent:latest
 docker build --platform linux/amd64 -f agents/flights/Dockerfile -t flights-agent:latest .
 docker tag flights-agent:latest $REPO_URL/flights-agent:latest
 docker push $REPO_URL/flights-agent:latest
+
+# Travel Orchestrator (build from repo root)
+docker build --platform linux/amd64 -f agents/orchestrator/Dockerfile -t travel-orchestrator-agent:latest .
+docker tag travel-orchestrator-agent:latest $REPO_URL/travel-orchestrator-agent:latest
+docker push $REPO_URL/travel-orchestrator-agent:latest
+
+# llama.cpp server image
+docker pull --platform linux/amd64 ghcr.io/ggml-org/llama.cpp:server
+docker tag ghcr.io/ggml-org/llama.cpp:server $REPO_URL/llama-cpp-server:latest
+docker push $REPO_URL/llama-cpp-server:latest
 ```
 
 ---
@@ -207,11 +251,40 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_A2A_AGENT;
 
 ---
 
-## Calling the Hotels Agent Directly
+## Step 6 — Download and Upload the LLM Model
 
-The SPCS public endpoint (port 8000) requires Snowflake JWT authentication.
+```bash
+cd agents/orchestrator
+./download_model.sh <SNOW_CONNECTION> <AGENT_DATABASE> <AGENT_SCHEMA>
+```
 
-### Set Environment Variables
+This downloads the Qwen2.5-1.5B-Instruct GGUF model (~1GB) and uploads it to `@LLM_MODELS`.
+
+---
+
+## Step 7 — Deploy the TRAVEL_ORCHESTRATOR Service
+
+See `setup/DEPLOY_SPCS.sql` for the full SQL. Key points:
+- Uses `TRAVEL_ORCHESTRATOR_POOL` (CPU_X64_S — 2 vCPU, 8 GB RAM)
+- Two-container service: llm-server (port 8080) + travel-orchestrator (port 9000)
+- Routes to `TRAVEL_A2A_AGENT` via internal DNS
+
+Verify:
+
+```sql
+SELECT SYSTEM$GET_SERVICE_STATUS('TRAVEL_ORCHESTRATOR');
+SHOW ENDPOINTS IN SERVICE TRAVEL_ORCHESTRATOR;
+```
+
+---
+
+## Usage & Testing
+
+### Calling the Hotels Agent Directly
+
+The `TRAVEL_A2A_AGENT` public endpoint (port 8000) requires Snowflake JWT authentication.
+
+#### Set Environment Variables
 
 ```bash
 export INGRESS_URL="<ingress_url>"           # from SHOW ENDPOINTS
@@ -219,7 +292,7 @@ export ACCOUNT_LOCATOR="<account_locator>"   # SELECT CURRENT_ACCOUNT();
 export USERNAME="<username>"                 # SELECT CURRENT_USER();
 ```
 
-### Generate JWT Token
+#### Generate JWT Token
 
 ```bash
 TOKEN=$(python3 -c "
@@ -229,14 +302,14 @@ print(generate_snowflake_jwt('$ACCOUNT_LOCATOR', '$USERNAME', 'rsa_key.p8'))
 ")
 ```
 
-### Discovery Endpoint
+#### Discovery Endpoint
 
 ```bash
 curl -H "Authorization: Snowflake Token=\"$TOKEN\"" \
   https://$INGRESS_URL/.well-known/agent-card.json
 ```
 
-### Send a Query
+#### Send a Query
 
 ```bash
 curl -X POST https://$INGRESS_URL/ \
@@ -256,145 +329,19 @@ curl -X POST https://$INGRESS_URL/ \
   }'
 ```
 
-### Test Client
+#### Test Client
 
 ```bash
 python agents/hotels/test_hotels_agent.py --query "List hotels with free cancellation in Tokyo"
 python agents/hotels/test_hotels_agent.py --card-only
 ```
 
----
+### Using the Travel Orchestrator
 
-## Service Management
-
-```sql
--- View logs
-SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_A2A_AGENT', 0, 'hotels-agent',  100);
-SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_A2A_AGENT', 0, 'flights-agent', 100);
-
--- Suspend (stops billing)
-ALTER SERVICE TRAVEL_A2A_AGENT SUSPEND;
-
--- Resume
-ALTER SERVICE TRAVEL_A2A_AGENT RESUME;
-
--- Delete
-DROP SERVICE TRAVEL_A2A_AGENT;
-DROP COMPUTE POOL TRAVEL_AGENT_POOL;
-```
-
----
-
-# Travel Orchestrator
-
-The `agents/orchestrator/` directory contains the Travel Orchestrator — a second SPCS service that runs a local LLM (Qwen2.5-1.5B via llama.cpp) to classify incoming queries and routes them to the appropriate Cortex agent via SPCS internal DNS.
-
-## Architecture
-
-```
-[Model Deployment – one-time setup]
-
-┌──────────────┐  download_model.sh  ┌──────────────────┐  SPCS volume  ┌───────────────────┐
-│  HuggingFace │────────────────────▶│ Snowflake Stage  │──────────────▶│    llm-server     │
-│ (Qwen GGUF)  │                     │  (@LLM_MODELS)   │    mount      │  (loads at start) │
-└──────────────┘                     └──────────────────┘               └───────────────────┘
-
-[Runtime]
-
-                                               SPCS Service (TRAVEL_ORCHESTRATOR)
-┌─────────────────┐  Public Endpoint  ┌─────────────────────────────────────────────────────┐
-│   A2A Client    │──────────────────▶│  ┌──────────────────┐  ┌──────────────────────────┐ │
-│  (Other Agents) │    (JWT Auth)     │  │ travel-orchestr. │─▶│       llm-server         │ │
-└─────────────────┘                   │  │  (Python, :9000) │  │  (llama.cpp, :8080)      │ │
-                                      │  │  3-way Router    │  │  Qwen2.5-1.5B (Q4_K_M)  │ │
-                                      │  └───┬──────────┬───┘  └──────────────────────────┘ │
-                                      └──────┼──────────┼────────────────────────────────────┘
-                                   HOTELS:   │          │ FLIGHTS:
-                                        (SPCS internal DNS)
-                                             │          │
-                             SPCS Service (TRAVEL_A2A_AGENT)
-                                    ┌────────┘          └────────┐
-                                    ▼                            ▼
-                    ┌───────────────────────────────────────────────────────┐
-                    │  ┌──────────────────────┐  ┌──────────────────────┐   │
-                    │  │    hotels-agent       │  │    flights-agent     │   │
-                    │  │  (Python, :8000)      │  │  (Python, :8001)     │   │
-                    │  │  public endpoint      │  │  internal only       │   │
-                    │  └──────────┬────────────┘  └──────────┬───────────┘   │
-                    └────────────┼──────────────────────────┼────────────────┘
-                                 │    SPCS Session Token    │
-                                 └──────────────┬───────────┘
-                                                ▼
-                                ┌────────────────────────────────┐
-                                │     Snowflake Cortex Agent     │
-                                │  HOTELS_BOOKING_AGENT  (:8000) │
-                                │  FLIGHTS_BOOKING_AGENT (:8001) │
-                                └────────────────────────────────┘
-```
-
-The orchestrator uses the local LLM to classify each query:
-- `HOTELS:` → `hotels-agent` (:8000) — hotel availability, pricing, guest reviews
-- `FLIGHTS:` → `flights-agent` (:8001) — fares, routes, schedules, passenger feedback
-- General knowledge → answered directly by the local LLM
-
-## Prerequisites
-
-- **TRAVEL_A2A_AGENT** service must be deployed and running (see above)
-- Docker
-- SnowCLI
-
-## Deployment
-
-### Step 1: Download and Upload the LLM Model
+The `TRAVEL_ORCHESTRATOR` public endpoint (port 9000) classifies and routes queries automatically.
 
 ```bash
-cd agents/orchestrator
-./download_model.sh <SNOW_CONNECTION> <AGENT_DATABASE> <AGENT_SCHEMA>
-```
-
-This downloads the Qwen2.5-1.5B-Instruct GGUF model (~1GB) and uploads it to `@LLM_MODELS`.
-
-### Step 2: Build and Push Docker Images
-
-```bash
-export REPO_URL="<repository_url>"
-export SNOW_CONNECTION="<YOUR_CONNECTION>"
-
-# Build from repo root (Dockerfile copies shared/ + agents/orchestrator/)
-docker build --platform linux/amd64 -f agents/orchestrator/Dockerfile -t travel-orchestrator-agent:latest .
-snow spcs image-registry login --connection $SNOW_CONNECTION
-docker tag travel-orchestrator-agent:latest $REPO_URL/travel-orchestrator-agent:latest
-docker push $REPO_URL/travel-orchestrator-agent:latest
-
-# Pull the llama.cpp server image and push to SPCS registry
-docker pull --platform linux/amd64 ghcr.io/ggml-org/llama.cpp:server
-docker tag ghcr.io/ggml-org/llama.cpp:server $REPO_URL/llama-cpp-server:latest
-docker push $REPO_URL/llama-cpp-server:latest
-```
-
-### Step 3: Deploy the Service
-
-See `setup/DEPLOY_SPCS.sql` for the full SQL. Key points:
-- Creates `TRAVEL_ORCHESTRATOR_POOL` (CPU_X64_S — 2 vCPU, 8 GB RAM)
-- Two-container service: llm-server (port 8080) + travel-orchestrator (port 9000)
-- Routes to `TRAVEL_A2A_AGENT` via internal DNS
-
-```sql
-CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_ORCHESTRATOR_POOL
-    MIN_NODES = 1 MAX_NODES = 1
-    INSTANCE_FAMILY = CPU_X64_S
-    AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 1800;
-```
-
-### Step 4: Verify and Test
-
-```sql
-SELECT SYSTEM$GET_SERVICE_STATUS('TRAVEL_ORCHESTRATOR');
-SHOW ENDPOINTS IN SERVICE TRAVEL_ORCHESTRATOR;
-```
-
-```bash
-export INGRESS_URL="<ingress_url>"
+export INGRESS_URL="<ingress_url>"           # from SHOW ENDPOINTS IN SERVICE TRAVEL_ORCHESTRATOR
 export ACCOUNT_LOCATOR="<org_name>-<account_locator>"
 export USERNAME="<username>"
 
@@ -408,17 +355,29 @@ python agents/orchestrator/test_travel_orchestrator.py --query "Show me 5-star h
 python agents/orchestrator/test_travel_orchestrator.py --query "Find business class flights from JFK to London"
 ```
 
+---
+
 ## Service Management
 
 ```sql
 -- View logs
-SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_ORCHESTRATOR', 0, 'llm-server',     100);
+SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_A2A_AGENT',    0, 'hotels-agent',        100);
+SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_A2A_AGENT',    0, 'flights-agent',       100);
+SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_ORCHESTRATOR', 0, 'llm-server',          100);
 SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_ORCHESTRATOR', 0, 'travel-orchestrator', 100);
 
--- Suspend / Resume / Delete
+-- Suspend (stops billing)
+ALTER SERVICE TRAVEL_A2A_AGENT SUSPEND;
 ALTER SERVICE TRAVEL_ORCHESTRATOR SUSPEND;
+
+-- Resume
+ALTER SERVICE TRAVEL_A2A_AGENT RESUME;
 ALTER SERVICE TRAVEL_ORCHESTRATOR RESUME;
+
+-- Delete
+DROP SERVICE TRAVEL_A2A_AGENT;
 DROP SERVICE TRAVEL_ORCHESTRATOR;
+DROP COMPUTE POOL TRAVEL_AGENT_POOL;
 DROP COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL;
 ```
 

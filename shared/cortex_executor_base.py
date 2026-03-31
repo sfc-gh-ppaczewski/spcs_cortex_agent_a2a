@@ -65,10 +65,21 @@ class CortexExecutorBase(AgentExecutor):
         print(f"  Endpoint: {self.api_url}")
 
     def _parse_sse_response(self, text: str) -> str:
-        """Parse SSE response text from Cortex."""
+        """Parse SSE response text from Cortex.
+
+        Only collects text from ``response.text.delta`` events and ignores
+        ``response.thinking.delta`` (chain-of-thought) events so that
+        reasoning tokens never leak into the final answer.
+        """
         full_text = ""
+        current_event = ""
         for line in text.split("\n"):
-            if line.startswith("data:"):
+            if line.startswith("event:"):
+                current_event = line[len("event:"):].strip()
+            elif line.startswith("data:"):
+                # Only keep answer tokens, skip thinking/reasoning tokens
+                if current_event == "response.thinking.delta":
+                    continue
                 try:
                     data = json.loads(line[5:].strip())
                     if "text" in data:
@@ -98,7 +109,8 @@ class CortexExecutorBase(AgentExecutor):
             payload = {
                 "messages": [
                     {"role": "user", "content": [{"type": "text", "text": incoming_text}]}
-                ]
+                ],
+                "stream": False,
             }
 
             print(f"[{self._agent_label}] Calling Snowflake Cortex API...")
@@ -128,7 +140,20 @@ class CortexExecutorBase(AgentExecutor):
             else:
                 data = response.json()
                 final_answer = self._fallback_message
-                if "messages" in data:
+
+                # New Cortex Agent API format: top-level "content" array
+                # Concatenate ALL text items (the agent may split its answer
+                # across multiple content entries).
+                if "content" in data:
+                    text_parts = []
+                    for item in data["content"]:
+                        if item.get("type") == "text" and "text" in item:
+                            text_parts.append(item["text"])
+                    if text_parts:
+                        final_answer = "\n\n".join(text_parts)
+
+                # Legacy format: "messages" array with role-based extraction
+                elif "messages" in data:
                     for msg in reversed(data["messages"]):
                         if msg["role"] in ["assistant", "analyst"]:
                             for content in msg["content"]:

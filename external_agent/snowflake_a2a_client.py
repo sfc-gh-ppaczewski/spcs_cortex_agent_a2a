@@ -24,8 +24,8 @@ from a2a.types import (
 class SnowflakeA2AClient:
     """Sends queries to the Snowflake Cortex A2A agent via A2A protocol."""
 
-    def __init__(self):
-        self.agent_url = os.getenv(
+    def __init__(self, url: str = None):
+        self.agent_url = url or os.getenv(
             "SNOWFLAKE_A2A_AGENT_URL", "http://cortex-a2a-agent:8000"
         )
         print(f"Snowflake A2A client target: {self.agent_url}")

@@ -309,23 +309,45 @@ The `external_agent/` directory contains a second SPCS service that acts as an o
 ## Architecture
 
 ```
-                                         SPCS Service (EXTERNAL_A2A_AGENT)
-┌─────────────────┐  Public Endpoint  ┌────────────────────────────────────────────────┐
-│   A2A Client    │──────────────────▶│  ┌──────────────────┐  ┌───────────────────┐   │
-│  (Other Agents) │    (JWT Auth)     │  │  external-agent  │  │    llm-server     │   │
-└─────────────────┘                   │  │  (Python, :9000) │  │ (llama.cpp, :8080)│   │
-                                      │  │                  │──▶│  Qwen2.5-1.5B    │   │
-                                      │  │   Orchestrator   │  │  (Q4_K_M, ~1GB)  │   │
-                                      │  └────────┬─────────┘  └───────────────────┘   │
-                                      └───────────┼────────────────────────────────────┘
-                                                  │ A2A (SPCS internal DNS)
-                                      ┌───────────▼────────────────────────────────────┐
-                                      │         CORTEX_A2A_AGENT (:8000)               │
-                                      │         (from main deployment above)            │
-                                      └────────────────────────────────────────────────┘
+[Model Deployment – one-time setup]
+
+┌──────────────┐  download_model.sh  ┌──────────────────┐  SPCS volume  ┌───────────────────┐
+│  HuggingFace │────────────────────▶│ Snowflake Stage  │──────────────▶│    llm-server     │
+│ (Qwen GGUF)  │                     │  (@LLM_MODELS)   │    mount      │  (loads at start) │
+└──────────────┘                     └──────────────────┘               └───────────────────┘
+
+[Runtime]
+
+                                                   SPCS Service (EXTERNAL_A2A_AGENT)
+┌─────────────────┐  Public Endpoint  ┌──────────────────────────────────────────────────────┐
+│   A2A Client    │──────────────────▶│  ┌──────────────────┐  ┌───────────────────────────┐ │
+│  (Other Agents) │    (JWT Auth)     │  │  external-agent  │─▶│       llm-server          │ │
+└─────────────────┘                   │  │  (Python, :9000) │  │  (llama.cpp, :8080)       │ │
+                                      │  │   3-way Router   │  │  Qwen2.5-1.5B (Q4_K_M)   │ │
+                                      │  └───┬──────────┬───┘  └───────────────────────────┘ │
+                                      └──────┼──────────┼─────────────────────────────────────┘
+                                   DATA:     │          │ INSIGHTS:
+                                        (SPCS internal DNS)
+                                             │          │
+                             SPCS Service (CORTEX_A2A_AGENT)
+                                    ┌────────┘          └────────┐
+                                    ▼                            ▼
+                    ┌───────────────────────────────────────────────────────┐
+                    │  ┌──────────────────────┐  ┌──────────────────────┐   │
+                    │  │      a2a-agent        │  │    insights-agent    │   │
+                    │  │  (Python, :8000)      │  │  (Python, :8001)     │   │
+                    │  │  public endpoint      │  │  internal only       │   │
+                    │  └──────────┬────────────┘  └──────────┬───────────┘   │
+                    └────────────┼──────────────────────────┼────────────────┘
+                                 │    SPCS Session Token    │
+                                 └──────────────┬───────────┘
+                                                ▼
+                                ┌───────────────────────────────┐
+                                │    Snowflake Cortex Agent     │
+                                └───────────────────────────────┘
 ```
 
-The external agent receives A2A messages, asks the local LLM whether to answer directly or delegate to Snowflake, and routes accordingly. Communication between services uses SPCS internal DNS (no JWT needed).
+The external agent receives A2A messages and uses the local LLM to classify them into one of three routes: `DATA:` questions go to `a2a-agent` (:8000) for factual lookups, `INSIGHTS:` questions go to `insights-agent` (:8001) for structured analytical reports, and general knowledge questions are answered directly by the local LLM. Both Cortex containers live in the same `CORTEX_A2A_AGENT` service and communicate via SPCS internal DNS (no JWT needed).
 
 ## Prerequisites
 
@@ -414,6 +436,99 @@ ALTER SERVICE EXTERNAL_A2A_AGENT SUSPEND;
 ALTER SERVICE EXTERNAL_A2A_AGENT RESUME;
 DROP SERVICE EXTERNAL_A2A_AGENT;
 DROP COMPUTE POOL EXTERNAL_AGENT_POOL;
+```
+
+---
+
+# Cortex Insights Agent
+
+The `insights_agent/` directory contains a second container that runs inside the `CORTEX_A2A_AGENT` service alongside the main data agent. It wraps the same Snowflake Cortex Agent API but specialises every response as a structured analytical report with **Executive Summary**, **Key Findings**, and **Recommendations** sections.
+
+It is reachable only via SPCS internal DNS at `http://cortex-a2a-agent:8001` — it has no public endpoint. The orchestrator (`EXTERNAL_A2A_AGENT`) routes `INSIGHTS:` queries to it automatically.
+
+## Deployment
+
+### Step 1: Build and Push the Docker Image
+
+```bash
+export REPO_URL="<repository_url>"    # from SHOW IMAGE REPOSITORIES
+export SNOW_CONNECTION="<YOUR_CONNECTION>"
+
+cd insights_agent
+docker build --platform linux/amd64 -t cortex-insights-agent:latest .
+
+snow spcs image-registry login --connection $SNOW_CONNECTION
+docker tag cortex-insights-agent:latest $REPO_URL/cortex-insights-agent:latest
+docker push $REPO_URL/cortex-insights-agent:latest
+```
+
+### Step 2: Add the Insights Container to CORTEX_A2A_AGENT
+
+Run the SQL in `insights_agent/DEPLOY.sql`. This uses `ALTER SERVICE` to update the existing service spec in-place — no downtime for the data agent:
+
+```sql
+ALTER SERVICE CORTEX_A2A_AGENT FROM SPECIFICATION $$
+spec:
+  containers:
+    - name: a2a-agent
+      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/cortex-a2a-agent:latest
+      env:
+        AGENT_DATABASE: <AGENT_DATABASE>
+        AGENT_SCHEMA:   <AGENT_SCHEMA>
+        AGENT_NAME:     <AGENT_NAME>
+        AGENT_DESCRIPTION: "A Snowflake Cortex Agent exposed via the A2A protocol."
+      resources:
+        requests: { cpu: 0.5, memory: 512Mi }
+        limits:   { cpu: 1,   memory: 1Gi  }
+
+    - name: insights-agent
+      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/cortex-insights-agent:latest
+      env:
+        AGENT_DATABASE:   <AGENT_DATABASE>
+        AGENT_SCHEMA:     <AGENT_SCHEMA>
+        AGENT_NAME:       <AGENT_NAME>
+        AGENT_DESCRIPTION: "Analytical insights agent generating structured executive reports."
+        SPCS_SERVICE_URL: "http://cortex-a2a-agent:8001"
+      resources:
+        requests: { cpu: 0.5, memory: 512Mi }
+        limits:   { cpu: 1,   memory: 1Gi  }
+
+  endpoints:
+    - name: a2a
+      port: 8000
+      public: true
+$$;
+```
+
+### Step 3: Verify
+
+```sql
+-- Both containers should show READY
+SELECT SYSTEM$GET_SERVICE_STATUS('CORTEX_A2A_AGENT');
+
+-- Check insights-agent logs
+SELECT SYSTEM$GET_SERVICE_LOGS('CORTEX_A2A_AGENT', 0, 'insights-agent', 50);
+```
+
+### Step 4: Test via the Orchestrator
+
+```bash
+# Should route INSIGHTS: → insights-agent → structured report
+python external_agent/test_external_agent.py --query "What trends do you see in our data?"
+
+# Should still route DATA: → a2a-agent → factual answer
+python external_agent/test_external_agent.py --query "How many customers do we have?"
+```
+
+## Service Management
+
+```sql
+-- View insights-agent logs
+SELECT SYSTEM$GET_SERVICE_LOGS('CORTEX_A2A_AGENT', 0, 'insights-agent', 100);
+
+-- Suspend / Resume / Delete (affects all containers in the service)
+ALTER SERVICE CORTEX_A2A_AGENT SUSPEND;
+ALTER SERVICE CORTEX_A2A_AGENT RESUME;
 ```
 
 ---

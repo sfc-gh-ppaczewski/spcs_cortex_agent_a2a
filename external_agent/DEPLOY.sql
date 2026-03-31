@@ -108,6 +108,7 @@ spec:
         LLM_BASE_URL: "http://localhost:8080/v1"
         LLM_MODEL: "local-model"
         SNOWFLAKE_A2A_AGENT_URL: "http://cortex-a2a-agent:8000"
+        INSIGHTS_A2A_AGENT_URL: "http://cortex-a2a-agent:8001"
       resources:
         requests:
           cpu: 0.5

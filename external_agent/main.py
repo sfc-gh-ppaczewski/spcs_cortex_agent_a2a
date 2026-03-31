@@ -73,12 +73,29 @@ def create_app() -> object:
         push_notifications=False,
     )
 
+    insights_skill = AgentSkill(
+        id="analytical_insights",
+        name="Analytical Insights",
+        description=(
+            "Routes analytical questions to the Cortex Insights Agent, which "
+            "returns structured executive reports covering Executive Summary, "
+            "Key Findings, and Recommendations."
+        ),
+        tags=["insights", "trends", "analysis", "recommendations", "forecasting"],
+        examples=[
+            "Why is customer churn increasing?",
+            "What trends do you see in revenue?",
+            "Recommend actions to improve sales next quarter.",
+            "Analyse the performance of our top products",
+        ],
+    )
+
     agent_card = AgentCard(
         name=f"External Agent: {agent_name}",
         description=agent_description,
         url=get_service_url(),
         version="1.0.0",
-        skills=[orchestration_skill, general_skill],
+        skills=[orchestration_skill, general_skill, insights_skill],
         capabilities=capabilities,
         defaultInputModes=["text"],
         defaultOutputModes=["text"],

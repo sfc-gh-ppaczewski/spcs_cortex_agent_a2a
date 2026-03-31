@@ -21,7 +21,7 @@ MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/q
 MODEL_FILE="qwen2.5-1.5b-instruct-q4_k_m.gguf"
 STAGE_NAME="LLM_MODELS"
 
-echo "=== External Agent Model Setup ==="
+echo "=== Travel Orchestrator Model Setup ==="
 echo "Connection: $SNOW_CONNECTION"
 echo "Target:     $DATABASE.$SCHEMA"
 echo "Model:      $MODEL_FILE"

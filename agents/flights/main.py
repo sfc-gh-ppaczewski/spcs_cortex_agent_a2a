@@ -12,7 +12,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard, AgentSkill, AgentCapabilities
 
-from executor import SnowflakeCortexFlightsExecutor
+from executor import FlightsAgentExecutor
 
 
 def get_service_url() -> str:
@@ -75,7 +75,7 @@ def create_app() -> A2AStarletteApplication:
         defaultOutputModes=["text"]
     )
 
-    executor = SnowflakeCortexFlightsExecutor()
+    executor = FlightsAgentExecutor()
     task_store = InMemoryTaskStore()
     request_handler = DefaultRequestHandler(
         agent_executor=executor,

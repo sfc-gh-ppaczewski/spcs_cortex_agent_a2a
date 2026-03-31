@@ -1,5 +1,5 @@
 """
-Executor for the external orchestrator A2A agent.
+Executor for the Travel Orchestrator A2A agent.
 
 Uses a local LLM (llama.cpp) for reasoning and routes questions to one of
 three destinations:
@@ -63,7 +63,7 @@ HOTELS_PREFIX = "HOTELS:"
 FLIGHTS_PREFIX = "FLIGHTS:"
 
 
-class ExternalAgentExecutor(AgentExecutor):
+class TravelOrchestratorExecutor(AgentExecutor):
     """
     A2A executor that uses a local LLM for reasoning and routes questions
     to the Hotels Booking Agent, Flights Booking Agent, or answers directly.
@@ -77,7 +77,7 @@ class ExternalAgentExecutor(AgentExecutor):
         self.flights_client = SnowflakeA2AClient(
             url=os.getenv("FLIGHTS_A2A_AGENT_URL", "http://travel-a2a-agent:8001")
         )
-        print("External agent executor initialized")
+        print("Travel orchestrator executor initialized")
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Process an incoming A2A message."""
@@ -94,14 +94,14 @@ class ExternalAgentExecutor(AgentExecutor):
                         incoming_text = actual_part.text
                         break
 
-            print(f"[External Agent] Received: {incoming_text}")
+            print(f"[Travel Orchestrator] Received: {incoming_text}")
 
             await event_queue.enqueue_event(TaskStatus(state=TaskState.working))
 
             # Ask the local LLM to decide: answer directly or delegate
-            print("[External Agent] Consulting local LLM...")
+            print("[Travel Orchestrator] Consulting local LLM...")
             llm_response = self.llm.complete(SYSTEM_PROMPT, incoming_text)
-            print(f"[External Agent] LLM response: {llm_response[:200]}")
+            print(f"[Travel Orchestrator] LLM response: {llm_response[:200]}")
 
             # Route based on the prefix the LLM produced.
             # Handle prefix at start or after chain-of-thought leakage.
@@ -115,16 +115,16 @@ class ExternalAgentExecutor(AgentExecutor):
 
             if HOTELS_PREFIX in stripped:
                 hotels_query = _extract_query(stripped, HOTELS_PREFIX)
-                print(f"[External Agent] Routing to Hotels Agent: {hotels_query}")
+                print(f"[Travel Orchestrator] Routing to Hotels Agent: {hotels_query}")
                 response = await self.hotels_client.send_query(hotels_query)
-                print(f"[External Agent] Hotels Agent response: {response[:200]}")
+                print(f"[Travel Orchestrator] Hotels Agent response: {response[:200]}")
                 final_answer = response
 
             elif FLIGHTS_PREFIX in stripped:
                 flights_query = _extract_query(stripped, FLIGHTS_PREFIX)
-                print(f"[External Agent] Routing to Flights Agent: {flights_query}")
+                print(f"[Travel Orchestrator] Routing to Flights Agent: {flights_query}")
                 response = await self.flights_client.send_query(flights_query)
-                print(f"[External Agent] Flights Agent response: {response[:200]}")
+                print(f"[Travel Orchestrator] Flights Agent response: {response[:200]}")
                 final_answer = response
 
             else:
@@ -134,7 +134,7 @@ class ExternalAgentExecutor(AgentExecutor):
             if not final_answer:
                 final_answer = "I was unable to generate a response."
 
-            print(f"[External Agent] Final answer ({len(final_answer)} chars)")
+            print(f"[Travel Orchestrator] Final answer ({len(final_answer)} chars)")
 
             response_msg = Message(
                 messageId=str(uuid.uuid4()),
@@ -145,7 +145,7 @@ class ExternalAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(TaskStatus(state=TaskState.completed))
 
         except Exception as e:
-            print(f"[External Agent] Error: {e}")
+            print(f"[Travel Orchestrator] Error: {e}")
             error_msg = Message(
                 messageId=str(uuid.uuid4()),
                 role="agent",

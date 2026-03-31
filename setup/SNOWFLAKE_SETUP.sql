@@ -2,20 +2,20 @@
 -- SNOWFLAKE_SETUP.sql — One-time data setup for the TravelDemo A2A demo
 --
 -- Creates the full data infrastructure for the travel booking demo:
---   - TRAVEL_DEMO database and BOOKING schema
+--   - TRAVEL_DEMO database and AGENTS schema
 --   - HOTELS, HOTEL_REVIEWS, FLIGHTS, FLIGHT_FEEDBACK tables with sample data
---   - BOOKING_MODELS stage (for Cortex Analyst semantic model YAMLs)
+--   - SEMANTIC_MODELS stage (for Cortex Analyst semantic model YAMLs)
 --   - HOTEL_REVIEWS_SEARCH and FLIGHT_FEEDBACK_SEARCH Cortex Search services
 --   - HOTELS_BOOKING_AGENT and FLIGHTS_BOOKING_AGENT Cortex Agents
 --
 -- Prerequisites:
---   - Upload hotels_semantic.yaml and flights_semantic.yaml to @BOOKING_MODELS
+--   - Upload hotels_semantic.yaml and flights_semantic.yaml to @SEMANTIC_MODELS
 --     after running this script (see instructions at the bottom)
 --   - COMPUTE_WH warehouse must exist
 --
 -- Replace <AGENT_DATABASE> and <AGENT_SCHEMA> below if you prefer a different
 -- location for the SPCS image repository. The agent data always lives in
--- TRAVEL_DEMO.BOOKING.
+-- TRAVEL_DEMO.AGENTS.
 -- ============================================================================
 
 USE ROLE SYSADMIN;
@@ -25,16 +25,16 @@ USE ROLE SYSADMIN;
 -- ============================================================================
 
 CREATE DATABASE IF NOT EXISTS TRAVEL_DEMO;
-CREATE SCHEMA IF NOT EXISTS TRAVEL_DEMO.BOOKING;
+CREATE SCHEMA IF NOT EXISTS TRAVEL_DEMO.AGENTS;
 
 USE DATABASE TRAVEL_DEMO;
-USE SCHEMA BOOKING;
+USE SCHEMA AGENTS;
 
 -- ============================================================================
 -- 2. TABLES
 -- ============================================================================
 
-CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.HOTELS (
+CREATE OR REPLACE TABLE TRAVEL_DEMO.AGENTS.HOTELS (
     HOTEL_ID            VARCHAR(20)     NOT NULL,
     HOTEL_NAME          VARCHAR(100)    NOT NULL,
     CITY                VARCHAR(50)     NOT NULL,
@@ -53,7 +53,7 @@ CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.HOTELS (
     PRIMARY KEY (HOTEL_ID)
 );
 
-CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS (
+CREATE OR REPLACE TABLE TRAVEL_DEMO.AGENTS.HOTEL_REVIEWS (
     REVIEW_ID       VARCHAR(20)     NOT NULL,
     HOTEL_ID        VARCHAR(20)     NOT NULL,
     GUEST_NAME      VARCHAR(100),
@@ -64,7 +64,7 @@ CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS (
     PRIMARY KEY (REVIEW_ID)
 );
 
-CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.FLIGHTS (
+CREATE OR REPLACE TABLE TRAVEL_DEMO.AGENTS.FLIGHTS (
     FLIGHT_ID           VARCHAR(20)     NOT NULL,
     AIRLINE             VARCHAR(50)     NOT NULL,
     FLIGHT_NUMBER       VARCHAR(10)     NOT NULL,
@@ -83,7 +83,7 @@ CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.FLIGHTS (
     PRIMARY KEY (FLIGHT_ID)
 );
 
-CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK (
+CREATE OR REPLACE TABLE TRAVEL_DEMO.AGENTS.FLIGHT_FEEDBACK (
     FEEDBACK_ID     VARCHAR(20)     NOT NULL,
     FLIGHT_ID       VARCHAR(20)     NOT NULL,
     PASSENGER_NAME  VARCHAR(100),
@@ -98,7 +98,7 @@ CREATE OR REPLACE TABLE TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK (
 -- 3. SAMPLE DATA — HOTELS
 -- ============================================================================
 
-INSERT INTO TRAVEL_DEMO.BOOKING.HOTELS VALUES
+INSERT INTO TRAVEL_DEMO.AGENTS.HOTELS VALUES
 ('H001', 'The Grand Paris',       'Paris',      'France',      5, 450.00, 'Suite',      3,  'spa,pool,fine dining,concierge,free wifi',                  '2026-04-01', '2026-04-07', 'available', 9.2, 'free_cancellation', 'platinum'),
 ('H002', 'Hotel Lumiere',         'Paris',      'France',      4, 180.00, 'Deluxe',    12,  'free wifi,breakfast,concierge',                             '2026-04-01', '2026-04-05', 'available', 8.5, '24h_notice',        'gold'),
 ('H003', 'Tokyo Garden Inn',      'Tokyo',      'Japan',       4, 220.00, 'Standard',   8,  'onsen,free wifi,gym,restaurant',                            '2026-04-10', '2026-04-15', 'available', 8.8, 'free_cancellation', 'gold'),
@@ -119,7 +119,7 @@ INSERT INTO TRAVEL_DEMO.BOOKING.HOTELS VALUES
 -- 4. SAMPLE DATA — HOTEL REVIEWS
 -- ============================================================================
 
-INSERT INTO TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS VALUES
+INSERT INTO TRAVEL_DEMO.AGENTS.HOTEL_REVIEWS VALUES
 ('R001', 'H001', 'Marie Dubois',         '2026-03-15', 'Absolutely magnificent stay at The Grand Paris! The spa was world-class and the butler service was impeccable. The room had stunning views of the Eiffel Tower. Worth every penny for a special occasion.',                                                                                     'positive', 10),
 ('R002', 'H001', 'James Chen',           '2026-02-28', 'The Grand Paris lived up to its reputation. Breakfast was extraordinary, staff were attentive without being intrusive. The suite was spacious and beautifully appointed. Will definitely return.',                                                                                               'positive',  9),
 ('R003', 'H002', 'Sarah Miller',         '2026-03-10', 'Hotel Lumiere is a solid choice for budget-conscious travelers. The breakfast was included and surprisingly good. Location was excellent near the Louvre. Room was small but clean and well-maintained.',                                                                                        'neutral',   8),
@@ -145,7 +145,7 @@ INSERT INTO TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS VALUES
 -- 5. SAMPLE DATA — FLIGHTS
 -- ============================================================================
 
-INSERT INTO TRAVEL_DEMO.BOOKING.FLIGHTS VALUES
+INSERT INTO TRAVEL_DEMO.AGENTS.FLIGHTS VALUES
 ('FL001', 'Delta',             'DL401',  'New York',    'JFK', 'London',       'LHR', '2026-04-01 08:00:00', '2026-04-01 20:00:00', 420, 'economy',         380.00,  45, 'available',  0),
 ('FL002', 'Delta',             'DL401',  'New York',    'JFK', 'London',       'LHR', '2026-04-01 08:00:00', '2026-04-01 20:00:00', 420, 'business',       2800.00,   8, 'limited',    0),
 ('FL003', 'British Airways',   'BA177',  'London',      'LHR', 'New York',     'JFK', '2026-04-02 11:30:00', '2026-04-02 14:45:00', 435, 'economy',         420.00,  32, 'available',  0),
@@ -166,7 +166,7 @@ INSERT INTO TRAVEL_DEMO.BOOKING.FLIGHTS VALUES
 -- 6. SAMPLE DATA — FLIGHT FEEDBACK
 -- ============================================================================
 
-INSERT INTO TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK VALUES
+INSERT INTO TRAVEL_DEMO.AGENTS.FLIGHT_FEEDBACK VALUES
 ('FB001', 'FL001', 'Alice Johnson',       '2026-03-20', 'Delta flight DL401 to London was comfortable and on time. The economy seats had decent legroom compared to competitors. Food was mediocre but the entertainment system was excellent. Crew were professional and attentive throughout the flight.',                                              'positive',  8),
 ('FB002', 'FL002', 'Benjamin Lee',        '2026-03-21', 'Delta business class to London was worth every cent. The lie-flat seats were comfortable and the food was genuinely restaurant quality. The lounge access at JFK was a great bonus. Will fly Delta business class again without hesitation.',                                                   'positive',  9),
 ('FB003', 'FL003', 'Claire Dumas',        '2026-03-22', 'British Airways from Heathrow was impeccable. The flight attendants were courteous and food quality in economy exceeded expectations. Slight turbulence over the Atlantic but handled professionally. Arrived on schedule.',                                                                    'positive',  8),
@@ -192,23 +192,23 @@ INSERT INTO TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK VALUES
 -- 7. STAGE FOR SEMANTIC MODELS
 -- ============================================================================
 
-CREATE STAGE IF NOT EXISTS TRAVEL_DEMO.BOOKING.BOOKING_MODELS
+CREATE STAGE IF NOT EXISTS TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS
     ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')
     COMMENT = 'Stores Cortex Analyst semantic model YAML files for hotels and flights';
 
 -- After running this script, upload the semantic model YAMLs from the setup/ directory:
 --
---   snow stage copy setup/hotels_semantic.yaml  @TRAVEL_DEMO.BOOKING.BOOKING_MODELS --connection $SNOW_CONNECTION
---   snow stage copy setup/flights_semantic.yaml @TRAVEL_DEMO.BOOKING.BOOKING_MODELS --connection $SNOW_CONNECTION
+--   snow stage copy setup/hotels_semantic.yaml  @TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS --connection $SNOW_CONNECTION
+--   snow stage copy setup/flights_semantic.yaml @TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS --connection $SNOW_CONNECTION
 --
 -- Verify upload:
---   LIST @TRAVEL_DEMO.BOOKING.BOOKING_MODELS;
+--   LIST @TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS;
 
 -- ============================================================================
 -- 8. CORTEX SEARCH SERVICES
 -- ============================================================================
 
-CREATE OR REPLACE CORTEX SEARCH SERVICE TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS_SEARCH
+CREATE OR REPLACE CORTEX SEARCH SERVICE TRAVEL_DEMO.AGENTS.HOTEL_REVIEWS_SEARCH
     ON REVIEW_TEXT
     ATTRIBUTES HOTEL_ID, GUEST_NAME, REVIEW_DATE, SENTIMENT, RATING
     WAREHOUSE = COMPUTE_WH
@@ -222,10 +222,10 @@ CREATE OR REPLACE CORTEX SEARCH SERVICE TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS_SEARCH
             REVIEW_TEXT,
             SENTIMENT,
             RATING
-        FROM TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS
+        FROM TRAVEL_DEMO.AGENTS.HOTEL_REVIEWS
     );
 
-CREATE OR REPLACE CORTEX SEARCH SERVICE TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK_SEARCH
+CREATE OR REPLACE CORTEX SEARCH SERVICE TRAVEL_DEMO.AGENTS.FLIGHT_FEEDBACK_SEARCH
     ON FEEDBACK_TEXT
     ATTRIBUTES FLIGHT_ID, PASSENGER_NAME, FEEDBACK_DATE, SENTIMENT, RATING
     WAREHOUSE = COMPUTE_WH
@@ -239,18 +239,18 @@ CREATE OR REPLACE CORTEX SEARCH SERVICE TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK_SEAR
             FEEDBACK_TEXT,
             SENTIMENT,
             RATING
-        FROM TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK
+        FROM TRAVEL_DEMO.AGENTS.FLIGHT_FEEDBACK
     );
 
 -- ============================================================================
 -- 9. CORTEX AGENTS
 -- ============================================================================
 
-CREATE OR REPLACE AGENT TRAVEL_DEMO.BOOKING.HOTELS_BOOKING_AGENT
+CREATE OR REPLACE AGENT TRAVEL_DEMO.AGENTS.HOTELS_BOOKING_AGENT
 FROM SPECIFICATION $$
 {
   "models": {"orchestration": "claude-4-sonnet"},
-  "orchestration": {"budget": {"seconds": 60, "tokens": 16000}},
+  "orchestration": {"budget": {"seconds": 120, "tokens": 16000}},
   "instructions": {
     "system": "You are a Senior Hotel Concierge at TravelDemo, a premium travel booking platform. Your role is to help guests discover and book the perfect hotel from our global portfolio.\n\nAnswer questions about hotel availability, pricing, amenities, guest ratings, room types, cancellation policies, and loyalty tiers.\n\nROUTING LOGIC:\n- For pricing, availability counts, rating averages, room counts, or any quantitative queries about hotels: use cortex_analyst\n- For guest reviews, sentiment, qualitative feedback, or what guests are saying about a hotel: use cortex_search\n- For comprehensive hotel questions: use both tools — cortex_analyst for the data, cortex_search for guest context\n\nBe conversational, warm, and precise. Provide recommendations when helpful.",
     "orchestration": "- For pricing, availability, rating averages, room counts, or any numerical queries about hotels: use cortex_analyst\n- For guest reviews, sentiment, or qualitative hotel feedback: use cortex_search\n- For comprehensive hotel questions: use both tools",
@@ -274,25 +274,25 @@ FROM SPECIFICATION $$
   ],
   "tool_resources": {
     "cortex_analyst": {
-      "semantic_model_file": "@TRAVEL_DEMO.BOOKING.BOOKING_MODELS/hotels_semantic.yaml",
+      "semantic_model_file": "@TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS/hotels_semantic.yaml",
       "execution_environment": {
         "type": "warehouse",
         "warehouse": "COMPUTE_WH"
       }
     },
     "cortex_search": {
-      "name": "TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS_SEARCH",
+      "name": "TRAVEL_DEMO.AGENTS.HOTEL_REVIEWS_SEARCH",
       "max_results": 5
     }
   }
 }
 $$;
 
-CREATE OR REPLACE AGENT TRAVEL_DEMO.BOOKING.FLIGHTS_BOOKING_AGENT
+CREATE OR REPLACE AGENT TRAVEL_DEMO.AGENTS.FLIGHTS_BOOKING_AGENT
 FROM SPECIFICATION $$
 {
   "models": {"orchestration": "claude-4-sonnet"},
-  "orchestration": {"budget": {"seconds": 60, "tokens": 16000}},
+  "orchestration": {"budget": {"seconds": 120, "tokens": 16000}},
   "instructions": {
     "system": "You are a Senior Flight Booking Specialist at TravelDemo. Your role is to help travelers find and book the ideal flight for their journey.\n\nAnswer questions about flight availability, fares, schedules, seat classes, airlines, routes, delays, and passenger experiences across our global flight inventory.\n\nROUTING LOGIC:\n- For fares, seat counts, delay averages, route comparisons, or any quantitative queries about flights: use cortex_analyst\n- For passenger reviews, feedback, qualitative airline information, or what passengers are saying: use cortex_search\n- For comprehensive questions about an airline or route: use both tools — cortex_analyst for the data, cortex_search for passenger context\n\nBe conversational, informative, and precise. Highlight value and relevant trade-offs between options.",
     "orchestration": "- For fares, available seats, delay averages, duration, or any numerical queries about flights: use cortex_analyst\n- For passenger reviews, feedback, or qualitative airline information: use cortex_search\n- For comprehensive airline or route questions: use both tools",
@@ -316,14 +316,14 @@ FROM SPECIFICATION $$
   ],
   "tool_resources": {
     "cortex_analyst": {
-      "semantic_model_file": "@TRAVEL_DEMO.BOOKING.BOOKING_MODELS/flights_semantic.yaml",
+      "semantic_model_file": "@TRAVEL_DEMO.AGENTS.SEMANTIC_MODELS/flights_semantic.yaml",
       "execution_environment": {
         "type": "warehouse",
         "warehouse": "COMPUTE_WH"
       }
     },
     "cortex_search": {
-      "name": "TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK_SEARCH",
+      "name": "TRAVEL_DEMO.AGENTS.FLIGHT_FEEDBACK_SEARCH",
       "max_results": 5
     }
   }
@@ -335,16 +335,16 @@ $$;
 -- ============================================================================
 
 -- Confirm tables and row counts
-SELECT 'HOTELS'        AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.BOOKING.HOTELS
+SELECT 'HOTELS'        AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.AGENTS.HOTELS
 UNION ALL
-SELECT 'HOTEL_REVIEWS' AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.BOOKING.HOTEL_REVIEWS
+SELECT 'HOTEL_REVIEWS' AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.AGENTS.HOTEL_REVIEWS
 UNION ALL
-SELECT 'FLIGHTS'       AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.BOOKING.FLIGHTS
+SELECT 'FLIGHTS'       AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.AGENTS.FLIGHTS
 UNION ALL
-SELECT 'FLIGHT_FEEDBACK' AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.BOOKING.FLIGHT_FEEDBACK;
+SELECT 'FLIGHT_FEEDBACK' AS tbl, COUNT(*) AS rows FROM TRAVEL_DEMO.AGENTS.FLIGHT_FEEDBACK;
 
 -- Confirm agents were created
-SHOW AGENTS IN SCHEMA TRAVEL_DEMO.BOOKING;
+SHOW AGENTS IN SCHEMA TRAVEL_DEMO.AGENTS;
 
 -- Confirm search services
-SHOW CORTEX SEARCH SERVICES IN SCHEMA TRAVEL_DEMO.BOOKING;
+SHOW CORTEX SEARCH SERVICES IN SCHEMA TRAVEL_DEMO.AGENTS;

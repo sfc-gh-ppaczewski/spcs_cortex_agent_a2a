@@ -5,7 +5,7 @@ tables:
     description: "Hotel portfolio with pricing, room availability, guest ratings, amenities, and booking details"
     base_table:
       database: TRAVEL_DEMO
-      schema: BOOKING
+      schema: AGENTS
       table: HOTELS
     primary_key:
       columns:

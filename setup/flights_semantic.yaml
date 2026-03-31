@@ -5,7 +5,7 @@ tables:
     description: "Flight inventory with fares, seat availability, routes, schedules, and delay data"
     base_table:
       database: TRAVEL_DEMO
-      schema: BOOKING
+      schema: AGENTS
       table: FLIGHTS
     primary_key:
       columns:
@@ -61,6 +61,18 @@ tables:
         description: "City of departure"
         expr: ORIGIN_CITY
         data_type: TEXT
+        sample_values:
+          - "New York"
+          - "London"
+          - "Singapore"
+          - "Tokyo"
+          - "Frankfurt"
+          - "Paris"
+          - "Doha"
+          - "San Francisco"
+          - "Hong Kong"
+          - "Munich"
+          - "Dubai"
 
       - name: ORIGIN_CODE
         synonyms:
@@ -82,6 +94,14 @@ tables:
         description: "City of arrival"
         expr: DESTINATION_CITY
         data_type: TEXT
+        sample_values:
+          - "London"
+          - "New York"
+          - "Dubai"
+          - "Tokyo"
+          - "Los Angeles"
+          - "Sydney"
+          - "Singapore"
 
       - name: DESTINATION_CODE
         synonyms:

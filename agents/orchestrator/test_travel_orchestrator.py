@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test client for the External Orchestrator A2A Agent deployed on SPCS.
+Test client for the Travel Orchestrator A2A Agent deployed on SPCS.
 
 Uses JWT authentication to connect to the SPCS public endpoint.
 
@@ -10,9 +10,9 @@ Required Environment Variables:
     USERNAME        - Your Snowflake username (SELECT CURRENT_USER())
 
 Usage:
-    python test_external_agent.py
-    python test_external_agent.py --query "What data do you have?"
-    python test_external_agent.py --card-only
+    python test_travel_orchestrator.py
+    python test_travel_orchestrator.py --query "What data do you have?"
+    python test_travel_orchestrator.py --card-only
 """
 
 import asyncio
@@ -24,8 +24,8 @@ import uuid
 
 import httpx
 
-# Add parent directory so we can import auth module
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Add shared directory so we can import auth module
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
 from auth import generate_snowflake_jwt
 
 
@@ -77,7 +77,7 @@ async def send_message(base_url: str, query: str, headers: dict) -> dict:
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Test the External Orchestrator A2A Agent on SPCS",
+        description="Test the Travel Orchestrator A2A Agent on SPCS",
     )
     parser.add_argument(
         "--query",
@@ -144,7 +144,7 @@ async def main():
         print("  openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt")
         return
 
-    print("\n--- External Orchestrator A2A Agent Test Client ---")
+    print("\n--- Travel Orchestrator A2A Agent Test Client ---")
     print(f"   Endpoint: {base_url}")
     print(f"   Account:  {account_locator}")
     print(f"   User:     {username}")

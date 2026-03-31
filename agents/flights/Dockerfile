@@ -1,3 +1,5 @@
+# Dockerfile for Flights Booking A2A Agent
+# Build from repo root: docker build -f agents/flights/Dockerfile .
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -6,12 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY agents/flights/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auth.py .
-COPY executor.py .
-COPY main.py .
+# Shared utilities (auth, response cleaner, base executor)
+COPY shared/ .
+
+# Agent-specific files
+COPY agents/flights/main.py .
+COPY agents/flights/executor.py .
 
 EXPOSE 8001
 

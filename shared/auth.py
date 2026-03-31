@@ -1,5 +1,5 @@
 """
-Authentication module for Snowflake Cortex A2A Agent.
+Authentication module for Snowflake Cortex A2A agents.
 """
 import os
 import time
@@ -20,30 +20,30 @@ def generate_snowflake_jwt(account: str, user: str, private_key_path: str) -> st
         encoding=serialization.Encoding.DER,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-    
+
     digest = hashes.Hash(hashes.SHA256())
     digest.update(public_key_der)
     fingerprint = base64.b64encode(digest.finalize()).decode('utf-8')
 
     qualified_name = f"{account.upper()}.{user.upper()}"
-    
+
     payload = {
         "iss": f"{qualified_name}.SHA256:{fingerprint}",
         "sub": qualified_name,
         "iat": int(time.time()),
         "exp": int(time.time()) + 3600
     }
-    
+
     return jwt.encode(payload, private_key, algorithm="RS256")
 
 
 def get_spcs_session_token() -> str:
     """
     Read the SPCS session token from the standard token file.
-    
+
     Returns:
         The session token string
-    
+
     Raises:
         ValueError: If token file is not found or empty
     """
@@ -63,7 +63,7 @@ def get_spcs_session_token() -> str:
 def get_auth_token_and_type() -> tuple[str, str]:
     """
     Get the SPCS session token for authentication.
-    
+
     Returns:
         Tuple of (token, "OAUTH")
     """

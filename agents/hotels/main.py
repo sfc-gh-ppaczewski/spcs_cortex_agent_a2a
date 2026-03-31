@@ -8,7 +8,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard, AgentSkill, AgentCapabilities
 
-from executor import SnowflakeCortexExecutor
+from executor import HotelsAgentExecutor
 
 
 def get_service_url() -> str:
@@ -26,7 +26,7 @@ def get_service_url() -> str:
 
 def create_app() -> A2AStarletteApplication:
     """Create and configure the A2A Starlette application."""
-    agent_name = os.getenv("AGENT_NAME", "cortex_agent")
+    agent_name = os.getenv("AGENT_NAME", "hotels_agent")
     agent_description = os.getenv(
         "AGENT_DESCRIPTION", 
         "A Snowflake Cortex Agent exposed via the A2A protocol."
@@ -64,7 +64,7 @@ def create_app() -> A2AStarletteApplication:
         defaultOutputModes=["text"]
     )
 
-    executor = SnowflakeCortexExecutor()
+    executor = HotelsAgentExecutor()
     task_store = InMemoryTaskStore()
     request_handler = DefaultRequestHandler(
         agent_executor=executor,
@@ -86,7 +86,7 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    agent_name = os.getenv("AGENT_NAME", "cortex_agent")
+    agent_name = os.getenv("AGENT_NAME", "hotels_agent")
     print(f"Starting Hotels Booking A2A Agent: {agent_name}")
     
     uvicorn.run(

@@ -11,21 +11,23 @@ Required Environment Variables:
     USERNAME        - Your Snowflake username (SELECT CURRENT_USER())
 
 Usage:
-    python test_a2a.py [--query "Your question here"]
+    python test_hotels_agent.py [--query "Your question here"]
     
 Examples:
-    python test_a2a.py
-    python test_a2a.py --query "Who are the top scorers?"
-    python test_a2a.py --url https://my-endpoint.snowflakecomputing.app --query "Hello"
+    python test_hotels_agent.py
+    python test_hotels_agent.py --query "Who are the top scorers?"
+    python test_hotels_agent.py --url https://my-endpoint.snowflakecomputing.app --query "Hello"
 """
 
 import asyncio
 import argparse
 import json
 import os
+import sys
 import uuid
 import httpx
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
 from auth import generate_snowflake_jwt
 
 
@@ -133,9 +135,9 @@ Environment Variables:
   USERNAME         - Snowflake username (SELECT CURRENT_USER())
 
 Examples:
-  python test_a2a.py
-  python test_a2a.py --query "What data do you have?"
-  python test_a2a.py --url https://my-endpoint.snowflakecomputing.app
+  python test_hotels_agent.py
+  python test_hotels_agent.py --query "What data do you have?"
+  python test_hotels_agent.py --url https://my-endpoint.snowflakecomputing.app
         """
     )
     parser.add_argument(

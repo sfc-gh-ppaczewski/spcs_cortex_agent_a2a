@@ -1,5 +1,5 @@
 """
-Main entry point for the External Orchestrator A2A Agent (SPCS).
+Main entry point for the Travel Orchestrator A2A Agent (SPCS).
 
 This agent uses a local LLM (llama.cpp sidecar) for reasoning and routes
 travel questions to either the Hotels Booking Agent or the Flights Booking Agent.
@@ -11,7 +11,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard, AgentSkill, AgentCapabilities
 
-from executor import ExternalAgentExecutor
+from executor import TravelOrchestratorExecutor
 
 
 def get_service_url() -> str:
@@ -102,7 +102,7 @@ def create_app() -> object:
         defaultOutputModes=["text"],
     )
 
-    executor = ExternalAgentExecutor()
+    executor = TravelOrchestratorExecutor()
     task_store = InMemoryTaskStore()
     request_handler = DefaultRequestHandler(
         agent_executor=executor,

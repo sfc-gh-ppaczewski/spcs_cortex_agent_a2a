@@ -1,0 +1,193 @@
+name: flights_semantic
+description: "Semantic model for flight inventory, fares, and schedules at TravelDemo"
+tables:
+  - name: FLIGHTS
+    description: "Flight inventory with fares, seat availability, routes, schedules, and delay data"
+    base_table:
+      database: TRAVEL_DEMO
+      schema: BOOKING
+      table: FLIGHTS
+    primary_key:
+      columns:
+        - FLIGHT_ID
+    dimensions:
+      - name: FLIGHT_ID
+        synonyms:
+          - "flight identifier"
+          - "flight code"
+          - "booking reference"
+        description: "Unique flight identifier"
+        expr: FLIGHT_ID
+        data_type: TEXT
+        unique: true
+
+      - name: AIRLINE
+        synonyms:
+          - "carrier"
+          - "airline name"
+          - "air carrier"
+          - "operator"
+        description: "Airline operating the flight"
+        expr: AIRLINE
+        data_type: TEXT
+        sample_values:
+          - "Delta"
+          - "British Airways"
+          - "Emirates"
+          - "Lufthansa"
+          - "Singapore Airlines"
+          - "Qatar Airways"
+          - "Japan Airlines"
+          - "United"
+          - "Cathay Pacific"
+          - "Air France"
+
+      - name: FLIGHT_NUMBER
+        synonyms:
+          - "flight no"
+          - "flight designation"
+          - "flight code"
+        description: "IATA flight number (e.g. DL401)"
+        expr: FLIGHT_NUMBER
+        data_type: TEXT
+
+      - name: ORIGIN_CITY
+        synonyms:
+          - "departure city"
+          - "from city"
+          - "origin"
+          - "flying from"
+          - "departing from"
+        description: "City of departure"
+        expr: ORIGIN_CITY
+        data_type: TEXT
+
+      - name: ORIGIN_CODE
+        synonyms:
+          - "departure airport"
+          - "origin airport"
+          - "from airport"
+          - "departure code"
+        description: "IATA code of the departure airport"
+        expr: ORIGIN_CODE
+        data_type: TEXT
+
+      - name: DESTINATION_CITY
+        synonyms:
+          - "arrival city"
+          - "to city"
+          - "destination"
+          - "flying to"
+          - "arriving at"
+        description: "City of arrival"
+        expr: DESTINATION_CITY
+        data_type: TEXT
+
+      - name: DESTINATION_CODE
+        synonyms:
+          - "arrival airport"
+          - "destination airport"
+          - "to airport"
+          - "arrival code"
+        description: "IATA code of the arrival airport"
+        expr: DESTINATION_CODE
+        data_type: TEXT
+
+      - name: SEAT_CLASS
+        synonyms:
+          - "cabin class"
+          - "travel class"
+          - "class of service"
+          - "fare class"
+          - "cabin"
+        description: "Cabin class (economy, premium_economy, business, first)"
+        expr: SEAT_CLASS
+        data_type: TEXT
+        sample_values:
+          - "economy"
+          - "premium_economy"
+          - "business"
+          - "first"
+
+      - name: BOOKING_STATUS
+        synonyms:
+          - "availability"
+          - "seat availability"
+          - "flight availability"
+          - "availability status"
+        description: "Current booking availability (available, limited, sold_out)"
+        expr: BOOKING_STATUS
+        data_type: TEXT
+        sample_values:
+          - "available"
+          - "limited"
+          - "sold_out"
+
+    measures:
+      - name: PRICE
+        synonyms:
+          - "fare"
+          - "ticket price"
+          - "cost"
+          - "ticket cost"
+          - "airfare"
+          - "flight price"
+          - "ticket fare"
+        description: "Ticket price in USD"
+        expr: PRICE
+        data_type: NUMBER
+
+      - name: AVAILABLE_SEATS
+        synonyms:
+          - "seats left"
+          - "seat availability"
+          - "seats available"
+          - "open seats"
+          - "remaining seats"
+        description: "Number of seats currently available for booking"
+        expr: AVAILABLE_SEATS
+        data_type: NUMBER
+
+      - name: DELAY_MINUTES
+        synonyms:
+          - "delay"
+          - "late minutes"
+          - "departure delay"
+          - "minutes delayed"
+          - "how late"
+        description: "Departure delay in minutes (0 means on time)"
+        expr: DELAY_MINUTES
+        data_type: NUMBER
+
+      - name: DURATION_MINUTES
+        synonyms:
+          - "flight duration"
+          - "flight length"
+          - "travel time"
+          - "flying time"
+          - "how long"
+        description: "Total flight duration in minutes"
+        expr: DURATION_MINUTES
+        data_type: NUMBER
+
+      - name: DEPARTURE_TIME
+        synonyms:
+          - "departure"
+          - "takes off"
+          - "departure datetime"
+          - "departs"
+          - "leaving time"
+        description: "Scheduled departure date and time"
+        expr: DEPARTURE_TIME
+        data_type: TEXT
+
+      - name: ARRIVAL_TIME
+        synonyms:
+          - "arrival"
+          - "lands"
+          - "arrival datetime"
+          - "arrives"
+          - "landing time"
+        description: "Scheduled arrival date and time"
+        expr: ARRIVAL_TIME
+        data_type: TEXT

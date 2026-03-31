@@ -1,18 +1,23 @@
 -- ============================================================================
--- DEPLOY.sql — Deploy the External Orchestrator A2A Agent on SPCS
+-- DEPLOY.sql — Deploy the Travel Orchestrator A2A Agent on SPCS
 --
 -- This service runs two containers:
---   1. llm-server:      llama.cpp serving a local Qwen2.5-1.5B model (port 8080)
---   2. external-agent:  Python A2A server that orchestrates queries (port 9000)
+--   1. llm-server:       llama.cpp serving a local Qwen2.5-1.5B model (port 8080)
+--   2. external-agent:   Python A2A server that orchestrates travel queries (port 9000)
+--
+-- The orchestrator routes:
+--   HOTELS: questions → Hotels Booking Agent (http://travel-a2a-agent:8000)
+--   FLIGHTS: questions → Flights Booking Agent (http://travel-a2a-agent:8001)
+--   General questions → answered directly by the local LLM
 --
 -- Prerequisites:
---   - The Cortex A2A agent (CORTEX_A2A_AGENT) is already deployed and running
+--   - The TRAVEL_A2A_AGENT service must be deployed and running (see README)
 --   - You have run download_model.sh to upload the GGUF model to a stage
 --   - You have built and pushed both Docker images to the SPCS image registry
 --
 -- Replace these placeholders before running:
---   <AGENT_DATABASE>  — Database where resources will be created
---   <AGENT_SCHEMA>    — Schema where resources will be created
+--   <AGENT_DATABASE>  — Database where resources will be created (e.g. TRAVEL_DEMO)
+--   <AGENT_SCHEMA>    — Schema where resources will be created (e.g. BOOKING)
 --   <REPO_URL>        — Image repository URL (from SHOW IMAGE REPOSITORIES)
 -- ============================================================================
 
@@ -22,7 +27,7 @@ USE DATABASE <AGENT_DATABASE>;
 USE SCHEMA <AGENT_SCHEMA>;
 
 -- Step 2: Create compute pool (CPU — no GPU needed for 1.5B quantized model)
-CREATE COMPUTE POOL IF NOT EXISTS EXTERNAL_AGENT_POOL
+CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_ORCHESTRATOR_POOL
     MIN_NODES = 1
     MAX_NODES = 1
     INSTANCE_FAMILY = CPU_X64_S   -- 2 vCPU, 8 GB RAM (sufficient for Q4 1.5B model)
@@ -62,11 +67,11 @@ LIST @LLM_MODELS;
 --   docker push $REPO_URL/external-a2a-agent:latest
 
 -- Step 6: Create the service with two containers
--- NOTE: Replace <AGENT_DATABASE>, <AGENT_SCHEMA>, and adjust the Cortex A2A
---       agent internal URL if your existing service has a different name.
+-- NOTE: Replace <AGENT_DATABASE> and <AGENT_SCHEMA>.
+--       The internal DNS for the Cortex agents service is http://travel-a2a-agent:<port>
 
-CREATE SERVICE EXTERNAL_A2A_AGENT
-    IN COMPUTE POOL EXTERNAL_AGENT_POOL
+CREATE SERVICE TRAVEL_ORCHESTRATOR
+    IN COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL
     FROM SPECIFICATION $$
 spec:
   containers:
@@ -103,12 +108,12 @@ spec:
     - name: external-agent
       image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/external-a2a-agent:latest
       env:
-        AGENT_NAME: external_orchestrator
-        AGENT_DESCRIPTION: "An external orchestrator agent with a local LLM that delegates Snowflake data questions via A2A protocol."
+        AGENT_NAME: travel_orchestrator
+        AGENT_DESCRIPTION: "Travel booking orchestrator that routes hotel questions to the Hotels Booking Agent and flight questions to the Flights Booking Agent via A2A protocol."
         LLM_BASE_URL: "http://localhost:8080/v1"
         LLM_MODEL: "local-model"
-        SNOWFLAKE_A2A_AGENT_URL: "http://cortex-a2a-agent:8000"
-        INSIGHTS_A2A_AGENT_URL: "http://cortex-a2a-agent:8001"
+        HOTELS_A2A_AGENT_URL: "http://travel-a2a-agent:8000"
+        FLIGHTS_A2A_AGENT_URL: "http://travel-a2a-agent:8001"
       resources:
         requests:
           cpu: 0.5
@@ -130,27 +135,26 @@ $$
     MAX_INSTANCES = 1;
 
 -- ============================================================================
--- IMPORTANT: The SNOWFLAKE_A2A_AGENT_URL above uses SPCS internal DNS.
--- The format is: http://<service-name>:<port>
--- If your Cortex A2A service is named differently, update accordingly.
--- You can find the internal DNS name with:
---   SHOW SERVICES;
--- The internal DNS hostname is the lowercase service name.
+-- IMPORTANT: The HOTELS_A2A_AGENT_URL and FLIGHTS_A2A_AGENT_URL above use
+-- SPCS internal DNS. The format is: http://<service-name>:<port>
+-- The internal DNS hostname is the lowercase service name (travel-a2a-agent).
+-- If you named your Cortex agents service differently, update accordingly.
+-- You can find active service names with: SHOW SERVICES;
 -- ============================================================================
 
 -- Step 7: Check service status
-SELECT SYSTEM$GET_SERVICE_STATUS('EXTERNAL_A2A_AGENT');
+SELECT SYSTEM$GET_SERVICE_STATUS('TRAVEL_ORCHESTRATOR');
 
 -- Wait for status to show READY, then get the public endpoint:
-SHOW ENDPOINTS IN SERVICE EXTERNAL_A2A_AGENT;
+SHOW ENDPOINTS IN SERVICE TRAVEL_ORCHESTRATOR;
 -- Copy the 'ingress_url' for the 'a2a' endpoint
 
 -- Step 8: View logs
 -- LLM server logs:
-SELECT SYSTEM$GET_SERVICE_LOGS('EXTERNAL_A2A_AGENT', 0, 'llm-server', 100);
+SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_ORCHESTRATOR', 0, 'llm-server', 100);
 
 -- External agent logs:
-SELECT SYSTEM$GET_SERVICE_LOGS('EXTERNAL_A2A_AGENT', 0, 'external-agent', 100);
+SELECT SYSTEM$GET_SERVICE_LOGS('TRAVEL_ORCHESTRATOR', 0, 'external-agent', 100);
 
 
 -- ============================================================================
@@ -164,7 +168,8 @@ SELECT SYSTEM$GET_SERVICE_LOGS('EXTERNAL_A2A_AGENT', 0, 'external-agent', 100);
 --
 -- Then run:
 --   python external_agent/test_external_agent.py --query "What is 2+2?"
---   python external_agent/test_external_agent.py --query "What data do you have access to?"
+--   python external_agent/test_external_agent.py --query "Show me 5-star hotels in Paris"
+--   python external_agent/test_external_agent.py --query "Find business class flights from JFK to London"
 
 
 -- ============================================================================
@@ -172,11 +177,11 @@ SELECT SYSTEM$GET_SERVICE_LOGS('EXTERNAL_A2A_AGENT', 0, 'external-agent', 100);
 -- ============================================================================
 
 -- Suspend (stops billing)
--- ALTER SERVICE EXTERNAL_A2A_AGENT SUSPEND;
+-- ALTER SERVICE TRAVEL_ORCHESTRATOR SUSPEND;
 
 -- Resume
--- ALTER SERVICE EXTERNAL_A2A_AGENT RESUME;
+-- ALTER SERVICE TRAVEL_ORCHESTRATOR RESUME;
 
 -- Delete everything
--- DROP SERVICE EXTERNAL_A2A_AGENT;
--- DROP COMPUTE POOL EXTERNAL_AGENT_POOL;
+-- DROP SERVICE TRAVEL_ORCHESTRATOR;
+-- DROP COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL;

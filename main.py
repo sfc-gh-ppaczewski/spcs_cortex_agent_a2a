@@ -33,14 +33,18 @@ def create_app() -> A2AStarletteApplication:
     )
     
     cortex_skill = AgentSkill(
-        id="query_cortex_agent",
-        name="Cortex Agent Query",
-        description=f"Sends queries to the Snowflake Cortex Agent ({agent_name}) and returns intelligent responses.",
-        tags=["snowflake", "cortex", "ai", "analytics"],
+        id="hotel_search_booking",
+        name="Hotel Search & Booking",
+        description=(
+            "Queries the TravelDemo Hotels Booking Agent for hotel availability, "
+            "pricing, amenities, guest ratings, and room types across our global portfolio."
+        ),
+        tags=["snowflake", "cortex", "hotels", "booking", "travel"],
         examples=[
-            "What data do you have access to?",
-            "Summarize the available information",
-            "Answer questions about the data"
+            "Show available 5-star hotels in Paris",
+            "What is the price per night at The Grand Paris?",
+            "List hotels with free cancellation in Tokyo",
+            "What are guests saying about Hotel Bella Vista?",
         ]
     )
 
@@ -50,7 +54,7 @@ def create_app() -> A2AStarletteApplication:
     )
 
     agent_card = AgentCard(
-        name=f"Cortex Agent: {agent_name}",
+        name=f"Hotels Booking Agent: {agent_name}",
         description=agent_description,
         url=get_service_url(),
         version="1.0.0",
@@ -83,7 +87,7 @@ app = create_app()
 
 if __name__ == "__main__":
     agent_name = os.getenv("AGENT_NAME", "cortex_agent")
-    print(f"Starting Snowflake Cortex A2A Agent: {agent_name}")
+    print(f"Starting Hotels Booking A2A Agent: {agent_name}")
     
     uvicorn.run(
         "main:app",

@@ -1,9 +1,9 @@
 """
-Main entry point for the Snowflake Cortex Insights A2A Agent (SPCS only).
+Main entry point for the Snowflake Cortex Flights Booking A2A Agent (SPCS only).
 
-This agent wraps a Snowflake Cortex Agent and specialises it for analytical
-insights: every response is structured as an executive report with
-Executive Summary, Key Findings, and Recommendations sections.
+This agent wraps a Snowflake Cortex Agent and specialises it for flight booking:
+answering questions about flight availability, fares, schedules, seat classes,
+delays, and passenger feedback from the TravelDemo BOOKING schema.
 """
 import os
 import uvicorn
@@ -12,14 +12,14 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCard, AgentSkill, AgentCapabilities
 
-from executor import SnowflakeCortexInsightsExecutor
+from executor import SnowflakeCortexFlightsExecutor
 
 
 def get_service_url() -> str:
     """Get the service URL from environment.
 
-    For the insights agent this should be set to the internal SPCS address
-    (e.g. http://cortex-a2a-agent:8001) via the SPCS_SERVICE_URL env var in
+    For the flights agent this should be set to the internal SPCS address
+    (e.g. http://travel-a2a-agent:8001) via the SPCS_SERVICE_URL env var in
     the service spec so the agent card advertises the correct internal URL.
     """
     ingress_url = os.getenv("SPCS_SERVICE_URL")
@@ -35,27 +35,27 @@ def get_service_url() -> str:
 
 def create_app() -> A2AStarletteApplication:
     """Create and configure the A2A Starlette application."""
-    agent_name = os.getenv("AGENT_NAME", "cortex_insights_agent")
+    agent_name = os.getenv("AGENT_NAME", "flights_booking_agent")
     agent_description = os.getenv(
         "AGENT_DESCRIPTION",
-        "A Snowflake Cortex Insights Agent that returns structured analytical "
-        "reports with Executive Summary, Key Findings, and Recommendations."
+        "A Snowflake Cortex Flights Booking Agent that answers questions about "
+        "flight availability, fares, schedules, seat classes, delays, and passenger feedback."
     )
 
-    insights_skill = AgentSkill(
-        id="analytical_insights",
-        name="Analytical Insights Report",
+    flights_skill = AgentSkill(
+        id="flight_search_booking",
+        name="Flight Search & Booking",
         description=(
-            "Analyses data and returns a structured business insights report "
-            "covering executive summary, key findings, and recommended actions. "
-            "Best for trend analysis, anomaly investigation, and strategic questions."
+            "Queries the TravelDemo Flights Booking Agent for flight availability, "
+            "fares, schedules, seat classes, airline performance, and passenger feedback. "
+            "Best for route searches, price comparisons, and travel planning."
         ),
-        tags=["insights", "trends", "analysis", "recommendations", "forecasting", "report"],
+        tags=["flights", "booking", "airlines", "travel", "fares", "schedules"],
         examples=[
-            "Why is customer churn increasing?",
-            "What trends do you see in our revenue data?",
-            "Analyse the performance of our top products",
-            "What should we focus on to improve sales next quarter?",
+            "Find available flights from JFK to LHR tomorrow",
+            "What is the cheapest business class fare to Tokyo?",
+            "How delayed is United Airlines on average?",
+            "What are passengers saying about Air France flights?",
         ]
     )
 
@@ -65,17 +65,17 @@ def create_app() -> A2AStarletteApplication:
     )
 
     agent_card = AgentCard(
-        name=f"Cortex Insights Agent: {agent_name}",
+        name=f"Flights Booking Agent: {agent_name}",
         description=agent_description,
         url=get_service_url(),
         version="1.0.0",
-        skills=[insights_skill],
+        skills=[flights_skill],
         capabilities=capabilities,
         defaultInputModes=["text"],
         defaultOutputModes=["text"]
     )
 
-    executor = SnowflakeCortexInsightsExecutor()
+    executor = SnowflakeCortexFlightsExecutor()
     task_store = InMemoryTaskStore()
     request_handler = DefaultRequestHandler(
         agent_executor=executor,
@@ -97,8 +97,8 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    agent_name = os.getenv("AGENT_NAME", "cortex_insights_agent")
-    print(f"Starting Snowflake Cortex Insights A2A Agent: {agent_name}")
+    agent_name = os.getenv("AGENT_NAME", "flights_booking_agent")
+    print(f"Starting Flights Booking A2A Agent: {agent_name}")
 
     uvicorn.run(
         "main:app",

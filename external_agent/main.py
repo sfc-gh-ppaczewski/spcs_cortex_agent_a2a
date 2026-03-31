@@ -1,8 +1,8 @@
 """
 Main entry point for the External Orchestrator A2A Agent (SPCS).
 
-This agent uses a local LLM (llama.cpp sidecar) for reasoning and
-delegates data questions to the Snowflake Cortex A2A agent.
+This agent uses a local LLM (llama.cpp sidecar) for reasoning and routes
+travel questions to either the Hotels Booking Agent or the Flights Booking Agent.
 """
 import os
 import uvicorn
@@ -29,27 +29,45 @@ def get_service_url() -> str:
 
 def create_app() -> object:
     """Create and configure the A2A Starlette application."""
-    agent_name = os.getenv("AGENT_NAME", "external_orchestrator")
+    agent_name = os.getenv("AGENT_NAME", "travel_orchestrator")
     agent_description = os.getenv(
         "AGENT_DESCRIPTION",
-        "An external orchestrator agent powered by a local open-source LLM. "
-        "Delegates Snowflake data questions to a Cortex Agent via A2A protocol.",
+        "A travel booking orchestrator powered by a local LLM. Routes hotel questions "
+        "to the Hotels Booking Agent and flight questions to the Flights Booking Agent "
+        "via A2A protocol. Answers general questions directly.",
     )
 
-    orchestration_skill = AgentSkill(
-        id="orchestrate_query",
-        name="Query Orchestration",
+    hotels_skill = AgentSkill(
+        id="hotel_booking_queries",
+        name="Hotel Booking Queries",
         description=(
-            "Analyzes user questions using a local LLM and either answers "
-            "directly or delegates data-related questions to a Snowflake "
-            "Cortex Agent via A2A protocol."
+            "Routes hotel-related questions to the Hotels Booking Agent, which answers "
+            "queries about availability, pricing, amenities, guest ratings, and reviews "
+            "for our global hotel portfolio."
         ),
-        tags=["orchestration", "snowflake", "data", "analytics", "a2a"],
+        tags=["hotels", "accommodation", "booking", "travel", "availability"],
         examples=[
-            "What data do you have access to?",
-            "How many customers are in the database?",
-            "What is the meaning of life?",
-            "Summarize the sales data",
+            "Show me available 5-star hotels in Paris",
+            "What is the price per night at The Grand Paris?",
+            "List hotels with free cancellation in Tokyo",
+            "What are guests saying about the Bali Zen Resort?",
+        ],
+    )
+
+    flights_skill = AgentSkill(
+        id="flight_booking_queries",
+        name="Flight Booking Queries",
+        description=(
+            "Routes flight-related questions to the Flights Booking Agent, which answers "
+            "queries about availability, fares, schedules, seat classes, delays, and "
+            "passenger feedback for our global flight inventory."
+        ),
+        tags=["flights", "airlines", "booking", "travel", "fares"],
+        examples=[
+            "Find available flights from JFK to LHR tomorrow",
+            "What is the cheapest business class fare to Tokyo?",
+            "How delayed is United Airlines on average?",
+            "What are passengers saying about Qatar Airways?",
         ],
     )
 
@@ -64,7 +82,7 @@ def create_app() -> object:
         examples=[
             "What is 2+2?",
             "Explain the A2A protocol",
-            "Write a haiku about snow",
+            "Write a haiku about travel",
         ],
     )
 
@@ -73,29 +91,12 @@ def create_app() -> object:
         push_notifications=False,
     )
 
-    insights_skill = AgentSkill(
-        id="analytical_insights",
-        name="Analytical Insights",
-        description=(
-            "Routes analytical questions to the Cortex Insights Agent, which "
-            "returns structured executive reports covering Executive Summary, "
-            "Key Findings, and Recommendations."
-        ),
-        tags=["insights", "trends", "analysis", "recommendations", "forecasting"],
-        examples=[
-            "Why is customer churn increasing?",
-            "What trends do you see in revenue?",
-            "Recommend actions to improve sales next quarter.",
-            "Analyse the performance of our top products",
-        ],
-    )
-
     agent_card = AgentCard(
-        name=f"External Agent: {agent_name}",
+        name=f"Travel Orchestrator: {agent_name}",
         description=agent_description,
         url=get_service_url(),
         version="1.0.0",
-        skills=[orchestration_skill, general_skill, insights_skill],
+        skills=[hotels_skill, flights_skill, general_skill],
         capabilities=capabilities,
         defaultInputModes=["text"],
         defaultOutputModes=["text"],
@@ -123,8 +124,8 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    agent_name = os.getenv("AGENT_NAME", "external_orchestrator")
-    print(f"Starting External Orchestrator A2A Agent: {agent_name}")
+    agent_name = os.getenv("AGENT_NAME", "travel_orchestrator")
+    print(f"Starting Travel Orchestrator A2A Agent: {agent_name}")
 
     uvicorn.run(
         "main:app",

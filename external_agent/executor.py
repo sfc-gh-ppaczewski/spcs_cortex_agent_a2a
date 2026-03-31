@@ -3,9 +3,9 @@ Executor for the external orchestrator A2A agent.
 
 Uses a local LLM (llama.cpp) for reasoning and routes questions to one of
 three destinations:
-  - DATA:    factual data lookups  → Cortex Data Agent    (:8000)
-  - INSIGHTS: analytical questions → Cortex Insights Agent (:8001)
-  - direct answer                  → local LLM
+  - HOTELS:  hotel booking questions  → Hotels Booking Agent  (:8000)
+  - FLIGHTS: flight booking questions → Flights Booking Agent (:8001)
+  - direct answer                      → local LLM
 """
 import os
 import uuid
@@ -22,33 +22,36 @@ from a2a.types import (
 from llm_client import LLMClient
 from snowflake_a2a_client import SnowflakeA2AClient
 
-SYSTEM_PROMPT = """You are a routing agent. Your ONLY job is to classify a question into one of three categories and respond accordingly.
+SYSTEM_PROMPT = """You are a routing agent. Your ONLY job is to classify a travel question into one of three categories and respond accordingly.
 
 RULES:
-- If the question asks for specific data facts (how many, list, show me, what is the value of, count): respond with ONLY "DATA: <question>" and nothing else.
-- If the question asks for analysis, trends, insights, recommendations, comparisons, forecasting, or explanations of patterns: respond with ONLY "INSIGHTS: <question>" and nothing else.
-- If the question is general knowledge, math, or logic unrelated to data: respond with ONLY the answer. No thinking, no preamble.
+- If the question is about hotels, accommodation, room availability, hotel prices, check-in/check-out, hotel amenities, hotel ratings, or hotel reviews: respond with ONLY "HOTELS: <question>" and nothing else.
+- If the question is about flights, airlines, routes, fare prices, seat class, departure/arrival times, flight delays, or passenger feedback: respond with ONLY "FLIGHTS: <question>" and nothing else.
+- If the question is general knowledge, math, or logic unrelated to travel bookings: respond with ONLY the answer. No thinking, no preamble.
 
 CRITICAL: Never include your reasoning process. Output ONLY the routing command OR the direct answer.
 
 Examples:
-User: How many customers are there?
-DATA: How many customers are there?
+User: Show me available 5-star hotels in Paris.
+HOTELS: Show me available 5-star hotels in Paris.
 
-User: What tables do you have?
-DATA: What tables do you have?
+User: What is the price per night at The Grand Paris?
+HOTELS: What is the price per night at The Grand Paris?
 
-User: What data do you have access to?
-DATA: What data do you have access to?
+User: What are guests saying about the Bali Zen Resort?
+HOTELS: What are guests saying about the Bali Zen Resort?
 
-User: Why is customer churn increasing?
-INSIGHTS: Why is customer churn increasing?
+User: Find available flights from JFK to LHR tomorrow.
+FLIGHTS: Find available flights from JFK to LHR tomorrow.
 
-User: What trends do you see in revenue?
-INSIGHTS: What trends do you see in revenue?
+User: What is the cheapest business class fare to Tokyo?
+FLIGHTS: What is the cheapest business class fare to Tokyo?
 
-User: Recommend actions to improve sales next quarter.
-INSIGHTS: Recommend actions to improve sales next quarter.
+User: How delayed is United Airlines on average?
+FLIGHTS: How delayed is United Airlines on average?
+
+User: What are passengers saying about Qatar Airways?
+FLIGHTS: What are passengers saying about Qatar Airways?
 
 User: What is 2+2?
 4
@@ -56,21 +59,23 @@ User: What is 2+2?
 User: Explain the A2A protocol.
 The Agent-to-Agent (A2A) protocol is a standard for AI agents to communicate with each other."""
 
-DATA_PREFIX = "DATA:"
-INSIGHTS_PREFIX = "INSIGHTS:"
+HOTELS_PREFIX = "HOTELS:"
+FLIGHTS_PREFIX = "FLIGHTS:"
 
 
 class ExternalAgentExecutor(AgentExecutor):
     """
     A2A executor that uses a local LLM for reasoning and routes questions
-    to the Cortex Data Agent, Cortex Insights Agent, or answers directly.
+    to the Hotels Booking Agent, Flights Booking Agent, or answers directly.
     """
 
     def __init__(self):
         self.llm = LLMClient()
-        self.data_client = SnowflakeA2AClient()
-        self.insights_client = SnowflakeA2AClient(
-            url=os.getenv("INSIGHTS_A2A_AGENT_URL", "http://cortex-a2a-agent:8001")
+        self.hotels_client = SnowflakeA2AClient(
+            url=os.getenv("HOTELS_A2A_AGENT_URL", "http://travel-a2a-agent:8000")
+        )
+        self.flights_client = SnowflakeA2AClient(
+            url=os.getenv("FLIGHTS_A2A_AGENT_URL", "http://travel-a2a-agent:8001")
         )
         print("External agent executor initialized")
 
@@ -108,18 +113,18 @@ class ExternalAgentExecutor(AgentExecutor):
                 # Discard any trailing reasoning after the first line
                 return query.split("\n")[0].strip()
 
-            if DATA_PREFIX in stripped:
-                data_query = _extract_query(stripped, DATA_PREFIX)
-                print(f"[External Agent] Routing to Data Agent: {data_query}")
-                response = await self.data_client.send_query(data_query)
-                print(f"[External Agent] Data Agent response: {response[:200]}")
+            if HOTELS_PREFIX in stripped:
+                hotels_query = _extract_query(stripped, HOTELS_PREFIX)
+                print(f"[External Agent] Routing to Hotels Agent: {hotels_query}")
+                response = await self.hotels_client.send_query(hotels_query)
+                print(f"[External Agent] Hotels Agent response: {response[:200]}")
                 final_answer = response
 
-            elif INSIGHTS_PREFIX in stripped:
-                insights_query = _extract_query(stripped, INSIGHTS_PREFIX)
-                print(f"[External Agent] Routing to Insights Agent: {insights_query}")
-                response = await self.insights_client.send_query(insights_query)
-                print(f"[External Agent] Insights Agent response: {response[:200]}")
+            elif FLIGHTS_PREFIX in stripped:
+                flights_query = _extract_query(stripped, FLIGHTS_PREFIX)
+                print(f"[External Agent] Routing to Flights Agent: {flights_query}")
+                response = await self.flights_client.send_query(flights_query)
+                print(f"[External Agent] Flights Agent response: {response[:200]}")
                 final_answer = response
 
             else:

@@ -1,0 +1,196 @@
+name: hotels_semantic
+description: "Semantic model for hotel inventory, pricing, and availability at TravelDemo"
+tables:
+  - name: HOTELS
+    description: "Hotel portfolio with pricing, room availability, guest ratings, amenities, and booking details"
+    base_table:
+      database: TRAVEL_DEMO
+      schema: BOOKING
+      table: HOTELS
+    primary_key:
+      columns:
+        - HOTEL_ID
+    dimensions:
+      - name: HOTEL_ID
+        synonyms:
+          - "hotel identifier"
+          - "property id"
+          - "hotel code"
+        description: "Unique hotel identifier"
+        expr: HOTEL_ID
+        data_type: TEXT
+        unique: true
+
+      - name: HOTEL_NAME
+        synonyms:
+          - "property name"
+          - "hotel"
+          - "accommodation name"
+          - "resort name"
+        description: "Full hotel name"
+        expr: HOTEL_NAME
+        data_type: TEXT
+
+      - name: CITY
+        synonyms:
+          - "location"
+          - "destination"
+          - "town"
+          - "where"
+        description: "City where the hotel is located"
+        expr: CITY
+        data_type: TEXT
+        sample_values:
+          - "Paris"
+          - "Tokyo"
+          - "New York"
+          - "London"
+          - "Dubai"
+          - "Bali"
+
+      - name: COUNTRY
+        synonyms:
+          - "nation"
+          - "destination country"
+          - "country location"
+        description: "Country where the hotel is located"
+        expr: COUNTRY
+        data_type: TEXT
+
+      - name: STAR_RATING
+        synonyms:
+          - "stars"
+          - "hotel category"
+          - "hotel class"
+          - "star level"
+        description: "Hotel star rating (3, 4, or 5 stars)"
+        expr: STAR_RATING
+        data_type: NUMBER
+        sample_values:
+          - "3"
+          - "4"
+          - "5"
+
+      - name: ROOM_TYPE
+        synonyms:
+          - "room category"
+          - "accommodation type"
+          - "room tier"
+          - "room grade"
+        description: "Type of room (Standard, Deluxe, Suite, Penthouse)"
+        expr: ROOM_TYPE
+        data_type: TEXT
+        sample_values:
+          - "Standard"
+          - "Deluxe"
+          - "Suite"
+          - "Penthouse"
+
+      - name: AMENITIES
+        synonyms:
+          - "facilities"
+          - "hotel services"
+          - "features"
+          - "hotel features"
+        description: "Comma-separated list of available amenities (e.g. spa, pool, gym, free wifi)"
+        expr: AMENITIES
+        data_type: TEXT
+
+      - name: BOOKING_STATUS
+        synonyms:
+          - "availability"
+          - "reservation status"
+          - "room availability"
+          - "availability status"
+        description: "Current booking availability (available, limited, sold_out)"
+        expr: BOOKING_STATUS
+        data_type: TEXT
+        sample_values:
+          - "available"
+          - "limited"
+          - "sold_out"
+
+      - name: CANCELLATION_POLICY
+        synonyms:
+          - "refund policy"
+          - "cancellation terms"
+          - "cancellation type"
+          - "refundable"
+        description: "Cancellation and refund policy (free_cancellation, 24h_notice, non_refundable)"
+        expr: CANCELLATION_POLICY
+        data_type: TEXT
+        sample_values:
+          - "free_cancellation"
+          - "24h_notice"
+          - "non_refundable"
+
+      - name: LOYALTY_TIER
+        synonyms:
+          - "rewards tier"
+          - "membership level"
+          - "loyalty level"
+          - "points tier"
+        description: "Loyalty program tier for points earning (standard, silver, gold, platinum)"
+        expr: LOYALTY_TIER
+        data_type: TEXT
+        sample_values:
+          - "standard"
+          - "silver"
+          - "gold"
+          - "platinum"
+
+    measures:
+      - name: PRICE_PER_NIGHT
+        synonyms:
+          - "nightly rate"
+          - "room rate"
+          - "cost per night"
+          - "price"
+          - "rate"
+          - "nightly price"
+        description: "Nightly room rate in USD"
+        expr: PRICE_PER_NIGHT
+        data_type: NUMBER
+
+      - name: AVAILABLE_ROOMS
+        synonyms:
+          - "room availability"
+          - "rooms left"
+          - "vacancies"
+          - "rooms available"
+          - "open rooms"
+        description: "Number of rooms currently available for booking"
+        expr: AVAILABLE_ROOMS
+        data_type: NUMBER
+
+      - name: GUEST_RATING
+        synonyms:
+          - "rating"
+          - "review score"
+          - "guest score"
+          - "review rating"
+          - "score"
+          - "guest satisfaction"
+        description: "Average guest rating out of 10"
+        expr: GUEST_RATING
+        data_type: NUMBER
+
+      - name: CHECK_IN_DATE
+        synonyms:
+          - "arrival date"
+          - "check in"
+          - "check-in"
+          - "arrival"
+        description: "Available check-in date"
+        expr: CHECK_IN_DATE
+        data_type: TEXT
+
+      - name: CHECK_OUT_DATE
+        synonyms:
+          - "departure date"
+          - "check out"
+          - "check-out"
+          - "departure"
+        description: "Available check-out date"
+        expr: CHECK_OUT_DATE
+        data_type: TEXT

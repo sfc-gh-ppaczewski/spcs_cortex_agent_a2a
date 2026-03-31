@@ -1,5 +1,9 @@
 """
-Executor module for Snowflake Cortex A2A Agent (SPCS only).
+Executor module for Snowflake Cortex Flights Booking A2A Agent (SPCS only).
+
+Wraps the Snowflake Cortex Agent API. The FLIGHTS_BOOKING_AGENT object
+owns the system prompt that guides the agent to answer questions about
+flight availability, fares, schedules, seat classes, delays, and passenger feedback.
 """
 import os
 import json
@@ -19,36 +23,43 @@ from a2a.types import (
 from auth import get_auth_token_and_type
 
 
-class SnowflakeCortexExecutor(AgentExecutor):
+class SnowflakeCortexFlightsExecutor(AgentExecutor):
     """
-    A2A executor that interfaces with Snowflake Cortex Agent via SPCS.
+    A2A executor that interfaces with Snowflake Cortex Agent via SPCS,
+    specialised for flight availability, booking, and passenger feedback queries.
     """
-    
+
     def __init__(self):
         """Initialize the executor with Snowflake configuration."""
         self.db = os.getenv("AGENT_DATABASE")
         self.schema = os.getenv("AGENT_SCHEMA")
         self.agent_name = os.getenv("AGENT_NAME")
-        
+
         snowflake_host = os.getenv("SNOWFLAKE_HOST")
         snowflake_port = os.getenv("SNOWFLAKE_PORT", "443")
-        
+
         if not snowflake_host:
             raise ValueError("SNOWFLAKE_HOST must be set in SPCS environment")
-        
+
         if snowflake_port == "443":
-            self.api_url = f"https://{snowflake_host}/api/v2/databases/{self.db}/schemas/{self.schema}/agents/{self.agent_name}:run"
+            self.api_url = (
+                f"https://{snowflake_host}/api/v2/databases/{self.db}"
+                f"/schemas/{self.schema}/agents/{self.agent_name}:run"
+            )
         else:
-            self.api_url = f"https://{snowflake_host}:{snowflake_port}/api/v2/databases/{self.db}/schemas/{self.schema}/agents/{self.agent_name}:run"
-        
-        print(f"Hotels Booking A2A Agent initialized")
+            self.api_url = (
+                f"https://{snowflake_host}:{snowflake_port}/api/v2/databases/{self.db}"
+                f"/schemas/{self.schema}/agents/{self.agent_name}:run"
+            )
+
+        print("Flights Booking A2A Agent initialized")
         print(f"  Agent: {self.db}.{self.schema}.{self.agent_name}")
         print(f"  Endpoint: {self.api_url}")
 
     def _parse_sse_response(self, response) -> str:
         """Parse SSE streaming response from Cortex."""
         full_text = ""
-        
+
         for line in response.iter_lines(decode_unicode=True):
             if line and line.startswith("data:"):
                 try:
@@ -57,7 +68,7 @@ class SnowflakeCortexExecutor(AgentExecutor):
                         full_text += data["text"]
                 except json.JSONDecodeError:
                     pass
-        
+
         return full_text.strip()
 
     _COT_PREFIXES = (
@@ -115,9 +126,6 @@ class SnowflakeCortexExecutor(AgentExecutor):
             return text
 
         # --- Phase 1: Remove duplicate paragraphs ---------------------------
-        # Cortex often emits the same block of text two or more times. We
-        # split on double-newlines, deduplicate while preserving order, then
-        # reassemble.
         paragraphs = re.split(r"\n{2,}", text.strip())
         seen: set[str] = set()
         unique: list[str] = []
@@ -154,9 +162,6 @@ class SnowflakeCortexExecutor(AgentExecutor):
                 text = cleaned
 
         # --- Phase 3: Remove interior CoT paragraphs -------------------------
-        # After dedup and leading strip, there may still be CoT blocks
-        # sandwiched between real content.  Drop any paragraph whose
-        # every non-blank line looks like CoT.
         paragraphs = re.split(r"\n{2,}", text.strip())
         kept: list[str] = []
         for para in paragraphs:
@@ -170,7 +175,6 @@ class SnowflakeCortexExecutor(AgentExecutor):
                     continue
                 if any(s.startswith(p) for p in cls._COT_PREFIXES):
                     continue
-                # "Step N:" style reasoning
                 if re.match(r"^Step\s+\d+:", s):
                     continue
                 all_cot = False
@@ -201,7 +205,7 @@ class SnowflakeCortexExecutor(AgentExecutor):
         """Main entry point called by A2A Protocol when a task is received."""
         try:
             incoming_text = "Hello"
-            
+
             if context.message and context.message.parts:
                 for part in context.message.parts:
                     actual_part = getattr(part, 'root', part)
@@ -211,9 +215,9 @@ class SnowflakeCortexExecutor(AgentExecutor):
                     elif hasattr(actual_part, 'text'):
                         incoming_text = actual_part.text
                         break
-            
-            print(f"Received query: {incoming_text}")
-            
+
+            print(f"[Flights Agent] Received query: {incoming_text}")
+
             await event_queue.enqueue_event(
                 TaskStatus(state=TaskState.working)
             )
@@ -236,31 +240,31 @@ class SnowflakeCortexExecutor(AgentExecutor):
                 ]
             }
 
-            print(f"Calling Snowflake Cortex API...")
+            print("[Flights Agent] Calling Snowflake Cortex API...")
             response = requests.post(
-                self.api_url, 
-                json=payload, 
-                headers=headers, 
+                self.api_url,
+                json=payload,
+                headers=headers,
                 timeout=120,
                 stream=True
             )
-            
+
             if response.status_code != 200:
-                print(f"Snowflake API Error {response.status_code}: {response.text}")
+                print(f"[Flights Agent] Snowflake API Error {response.status_code}: {response.text}")
                 await event_queue.enqueue_event(
                     TaskStatus(state=TaskState.failed)
                 )
                 return
 
             content_type = response.headers.get("Content-Type", "")
-            
+
             if "text/event-stream" in content_type:
-                print(f"Receiving streaming response from Cortex...")
+                print("[Flights Agent] Receiving streaming response from Cortex...")
                 final_answer = self._parse_sse_response(response)
             else:
                 data = response.json()
-                final_answer = "I could not retrieve an answer from the Cortex Agent."
-                
+                final_answer = "I could not retrieve flight booking information from the Cortex Agent."
+
                 if "messages" in data:
                     for msg in reversed(data["messages"]):
                         if msg["role"] in ["assistant", "analyst"]:
@@ -269,27 +273,27 @@ class SnowflakeCortexExecutor(AgentExecutor):
                                     final_answer = content["text"]
                                     break
                             break
-            
+
             final_answer = self._clean_response(final_answer)
 
             if not final_answer:
-                final_answer = "I could not retrieve an answer from the Cortex Agent."
-            
-            print(f"Got response from Cortex ({len(final_answer)} chars)")
-            
+                final_answer = "I could not retrieve flight booking information from the Cortex Agent."
+
+            print(f"[Flights Agent] Got response from Cortex ({len(final_answer)} chars)")
+
             response_msg = Message(
                 messageId=str(uuid.uuid4()),
                 role="agent",
                 parts=[TextPart(text=final_answer)]
             )
             await event_queue.enqueue_event(response_msg)
-            
+
             await event_queue.enqueue_event(
                 TaskStatus(state=TaskState.completed)
             )
 
         except Exception as e:
-            print(f"Execution error: {str(e)}")
+            print(f"[Flights Agent] Execution error: {str(e)}")
             await event_queue.enqueue_event(
                 TaskStatus(state=TaskState.failed)
             )

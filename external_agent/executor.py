@@ -18,27 +18,29 @@ from a2a.types import (
 from llm_client import LLMClient
 from snowflake_a2a_client import SnowflakeA2AClient
 
-SYSTEM_PROMPT = """You are an orchestrator agent. You have access to a Snowflake data agent \
-that can answer questions about data stored in Snowflake, run analytics queries, \
-and provide information about databases, tables, and their contents.
+SYSTEM_PROMPT = """You are a routing agent. Your ONLY job is to decide whether to delegate a question to a Snowflake data agent or answer it yourself.
 
-When you receive a user question:
+RULES:
+- If the question is about data, databases, tables, analytics, metrics, Snowflake, SQL, customers, or anything requiring a data warehouse: respond with ONLY "DELEGATE: <question>" and nothing else.
+- If the question is general knowledge, math, or logic: respond with ONLY the answer. No thinking, no preamble, no explanation of your reasoning.
 
-1. If the question is about data, databases, tables, analytics, metrics, \
-   Snowflake, SQL, or anything that requires querying a data warehouse — \
-   you MUST delegate to the Snowflake agent. Respond with EXACTLY this format:
-   DELEGATE: <the question to forward to the Snowflake agent>
-
-2. If the question is general knowledge, math, logic, or something you can \
-   answer without data access — answer it directly.
+CRITICAL: Never include your reasoning process. Output ONLY the delegation command OR the direct answer.
 
 Examples:
-- "What tables do you have?" → DELEGATE: What tables do you have?
-- "How many customers are there?" → DELEGATE: How many customers are there?
-- "What data do you have access to?" → DELEGATE: What data do you have access to?
-- "What is 2+2?" → The answer is 4.
-- "Explain what A2A protocol is" → (answer directly)
-"""
+User: What tables do you have?
+DELEGATE: What tables do you have?
+
+User: How many customers are there?
+DELEGATE: How many customers are there?
+
+User: What data do you have access to?
+DELEGATE: What data do you have access to?
+
+User: What is 2+2?
+4
+
+User: Explain the A2A protocol.
+The Agent-to-Agent (A2A) protocol is a standard for AI agents to communicate with each other."""
 
 DELEGATE_PREFIX = "DELEGATE:"
 
@@ -79,8 +81,14 @@ class ExternalAgentExecutor(AgentExecutor):
             print(f"[External Agent] LLM response: {llm_response[:200]}")
 
             # Check if LLM wants to delegate to the Snowflake agent
-            if llm_response.strip().startswith(DELEGATE_PREFIX):
-                delegated_query = llm_response.strip()[len(DELEGATE_PREFIX):].strip()
+            stripped = llm_response.strip()
+            # Handle DELEGATE: at start or after chain-of-thought leakage
+            if DELEGATE_PREFIX in stripped:
+                delegate_pos = stripped.index(DELEGATE_PREFIX)
+                delegated_query = stripped[delegate_pos + len(DELEGATE_PREFIX):].strip()
+                # Remove any trailing reasoning after the query
+                if "\n" in delegated_query:
+                    delegated_query = delegated_query.split("\n")[0].strip()
                 print(f"[External Agent] Delegating to Snowflake agent: {delegated_query}")
 
                 snowflake_response = await self.snowflake_client.send_query(

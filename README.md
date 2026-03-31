@@ -354,7 +354,7 @@ cd agents/orchestrator
 
 This downloads the Qwen2.5-1.5B-Instruct GGUF model (~1GB) and uploads it to `@LLM_MODELS`.
 
-### Step 2: Build and Push the Docker Image
+### Step 2: Build and Push Docker Images
 
 ```bash
 export REPO_URL="<repository_url>"
@@ -365,10 +365,12 @@ docker build --platform linux/amd64 -f agents/orchestrator/Dockerfile -t travel-
 snow spcs image-registry login --connection $SNOW_CONNECTION
 docker tag travel-orchestrator-agent:latest $REPO_URL/travel-orchestrator-agent:latest
 docker push $REPO_URL/travel-orchestrator-agent:latest
-```
 
-> **Note:** The llama.cpp server image (`ghcr.io/ggerganov/llama.cpp:server`) is referenced
-> directly in the service spec — no need to pull and push it to your registry.
+# Pull the llama.cpp server image and push to SPCS registry
+docker pull --platform linux/amd64 ghcr.io/ggml-org/llama.cpp:server
+docker tag ghcr.io/ggml-org/llama.cpp:server $REPO_URL/llama-cpp-server:latest
+docker push $REPO_URL/llama-cpp-server:latest
+```
 
 ### Step 3: Deploy the Service
 

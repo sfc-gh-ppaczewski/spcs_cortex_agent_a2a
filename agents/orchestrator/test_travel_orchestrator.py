@@ -25,12 +25,12 @@ import uuid
 import httpx
 
 # Add shared directory so we can import auth module
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "shared"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "shared"))
 from auth import generate_snowflake_jwt
 
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
-DEFAULT_PRIVATE_KEY_PATH = os.path.join(os.path.dirname(__file__), "..", "rsa_key.p8")
+DEFAULT_PRIVATE_KEY_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "rsa_key.p8")
 
 
 def get_auth_headers(account_locator: str, username: str, private_key_path: str) -> dict:

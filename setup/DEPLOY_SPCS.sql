@@ -69,8 +69,10 @@ CREATE STAGE IF NOT EXISTS LLM_MODELS
 --   docker tag travel-orchestrator-agent:latest $REPO_URL/travel-orchestrator-agent:latest
 --   docker push $REPO_URL/travel-orchestrator-agent:latest
 --
--- NOTE: The llama.cpp server image (ghcr.io/ggerganov/llama.cpp:server) is
--- referenced directly in the service spec — no need to push it to your registry.
+--   # llama.cpp server (pull from GHCR, re-tag, push to SPCS registry)
+--   docker pull --platform linux/amd64 ghcr.io/ggml-org/llama.cpp:server
+--   docker tag ghcr.io/ggml-org/llama.cpp:server $REPO_URL/llama-cpp-server:latest
+--   docker push $REPO_URL/llama-cpp-server:latest
 -- ============================================================================
 
 -- ============================================================================
@@ -178,7 +180,7 @@ CREATE SERVICE TRAVEL_ORCHESTRATOR
 spec:
   containers:
     - name: llm-server
-      image: ghcr.io/ggerganov/llama.cpp:server
+      image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/llama-cpp-server:latest
       args:
         - "--model"
         - "/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
@@ -203,8 +205,6 @@ spec:
       readinessProbe:
         port: 8080
         path: /health
-        initialDelaySeconds: 30
-        periodSeconds: 10
 
     - name: travel-orchestrator
       image: /<AGENT_DATABASE>/<AGENT_SCHEMA>/A2A_IMAGES/travel-orchestrator-agent:latest

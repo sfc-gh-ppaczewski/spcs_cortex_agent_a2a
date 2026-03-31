@@ -90,6 +90,7 @@ spcs_cortex_agent_a2a/
 └── setup/
     ├── SNOWFLAKE_SETUP.sql         # One-time Snowflake data setup
     ├── DEPLOY_SPCS.sql             # All SPCS services (TRAVEL_A2A_AGENT + TRAVEL_ORCHESTRATOR)
+    ├── download_llm_model.ipynb    # Snowflake Notebook — downloads GGUF model to @LLM_MODELS
     ├── hotels_semantic.yaml        # Cortex Analyst semantic model for HOTELS
     └── flights_semantic.yaml       # Cortex Analyst semantic model for FLIGHTS
 ```
@@ -275,23 +276,21 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_A2A_AGENT;
 
 ## Step 6 — Upload the LLM Model to Snowflake
 
-Run the stored procedure to download the Qwen2.5-1.5B-Instruct GGUF model (~1GB) directly from HuggingFace into `@LLM_MODELS` — no local download required. The required HuggingFace network rule and external access integration are created automatically by `SNOWFLAKE_SETUP.sql` (Step 1).
+Import `setup/download_llm_model.ipynb` into Snowflake Workspace and run it on the `TRAVEL_DEMO_POOL` compute pool. The notebook downloads the Qwen2.5-1.5B-Instruct GGUF model (~1 GB) directly from HuggingFace and uploads it to `@TRAVEL_DEMO.AGENTS.LLM_MODELS`.
 
-```bash
-snow sql -c $SNOW_CONNECTION -q "CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();"
-```
+1. In Snowflake Workspace (Snowsight), create a new notebook and import `setup/download_llm_model.ipynb`
+2. Open the notebook → **Session** panel → **Compute** → select **TRAVEL_DEMO_POOL**
+3. Run all cells
 
-Or from Snowsight:
-
-```sql
-CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();
-```
+The SPCS compute pool node provides sufficient local disk and has direct internet egress — no External Access Integration is required.
 
 Verify the upload completed:
 
 ```bash
 snow sql -c $SNOW_CONNECTION -q "LIST @TRAVEL_DEMO.AGENTS.LLM_MODELS;"
 ```
+
+You should see `qwen2.5-1.5b-instruct-q4_k_m.gguf` (~1.06 GB).
 
 ---
 

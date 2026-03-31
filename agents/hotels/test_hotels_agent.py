@@ -21,45 +21,18 @@ Examples:
 
 import asyncio
 import argparse
-import base64
 import json
 import os
-import time
+import sys
 import uuid
 import httpx
-import jwt
-from cryptography.hazmat.primitives import serialization, hashes
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from shared.auth import generate_snowflake_jwt
 
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 DEFAULT_PRIVATE_KEY_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "rsa_key.p8")
-
-
-def generate_snowflake_jwt(account: str, user: str, private_key_path: str) -> str:
-    """Generate a Snowflake JWT for authentication."""
-    with open(private_key_path, "rb") as key_file:
-        private_key = serialization.load_pem_private_key(key_file.read(), password=None)
-
-    public_key = private_key.public_key()
-    public_key_der = public_key.public_bytes(
-        encoding=serialization.Encoding.DER,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-
-    digest = hashes.Hash(hashes.SHA256())
-    digest.update(public_key_der)
-    fingerprint = base64.b64encode(digest.finalize()).decode("utf-8")
-
-    qualified_name = f"{account.upper()}.{user.upper()}"
-
-    payload = {
-        "iss": f"{qualified_name}.SHA256:{fingerprint}",
-        "sub": qualified_name,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 3600,
-    }
-
-    return jwt.encode(payload, private_key, algorithm="RS256")
 
 
 def get_auth_headers(account_locator: str, username: str, private_key_path: str) -> dict:

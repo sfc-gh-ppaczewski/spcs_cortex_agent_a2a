@@ -168,14 +168,8 @@ USE ROLE ACCOUNTADMIN;
 USE DATABASE TRAVEL_DEMO;
 USE SCHEMA AGENTS;
 
--- Compute pool for the Cortex agents service
-CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_AGENT_POOL
-    MIN_NODES = 1 MAX_NODES = 1
-    INSTANCE_FAMILY = CPU_X64_XS
-    AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 1800;
-
--- Compute pool for the Travel Orchestrator (needs more RAM for local LLM)
-CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_ORCHESTRATOR_POOL
+-- Single compute pool shared by both services
+CREATE COMPUTE POOL IF NOT EXISTS TRAVEL_DEMO_POOL
     MIN_NODES = 1 MAX_NODES = 1
     INSTANCE_FAMILY = CPU_X64_S
     AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 1800;
@@ -227,7 +221,7 @@ See `setup/DEPLOY_SPCS.sql` for the full SQL (database and schema are hardcoded 
 
 ```sql
 CREATE SERVICE TRAVEL_A2A_AGENT
-    IN COMPUTE POOL TRAVEL_AGENT_POOL
+    IN COMPUTE POOL TRAVEL_DEMO_POOL
     FROM SPECIFICATION $$
 spec:
   containers:
@@ -237,13 +231,28 @@ spec:
         AGENT_DATABASE: TRAVEL_DEMO
         AGENT_SCHEMA: AGENTS
         AGENT_NAME: HOTELS_BOOKING_AGENT
+        AGENT_DESCRIPTION: "Senior Hotel Concierge answering questions about hotel availability, pricing, amenities, and guest reviews."
+      resources:
+        requests:
+          cpu: 0.5
+          memory: 512Mi
+        limits:
+          cpu: 1
+          memory: 1Gi
     - name: flights-agent
       image: /TRAVEL_DEMO/AGENTS/A2A_IMAGES/flights-agent:latest
       env:
         AGENT_DATABASE: TRAVEL_DEMO
         AGENT_SCHEMA: AGENTS
         AGENT_NAME: FLIGHTS_BOOKING_AGENT
-        SPCS_SERVICE_URL: "http://travel-a2a-agent:8001"
+        AGENT_DESCRIPTION: "Senior Flight Booking Specialist answering questions about flight availability, fares, schedules, and passenger feedback."
+      resources:
+        requests:
+          cpu: 0.5
+          memory: 512Mi
+        limits:
+          cpu: 1
+          memory: 1Gi
   endpoints:
     - name: a2a
       port: 8000
@@ -266,7 +275,7 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_A2A_AGENT;
 
 ## Step 6 — Upload the LLM Model to Snowflake
 
-Run the stored procedure to download the Qwen2.5-1.5B-Instruct GGUF model (~1GB) directly from HuggingFace into `@LLM_MODELS` — no local download required:
+Run the stored procedure to download the Qwen2.5-1.5B-Instruct GGUF model (~1GB) directly from HuggingFace into `@LLM_MODELS` — no local download required. The required HuggingFace network rule and external access integration are created automatically by `SNOWFLAKE_SETUP.sql` (Step 1).
 
 ```bash
 snow sql -c $SNOW_CONNECTION -q "CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();"
@@ -289,7 +298,7 @@ snow sql -c $SNOW_CONNECTION -q "LIST @TRAVEL_DEMO.AGENTS.LLM_MODELS;"
 ## Step 7 — Deploy the TRAVEL_ORCHESTRATOR Service
 
 See `setup/DEPLOY_SPCS.sql` for the full SQL. Key points:
-- Uses `TRAVEL_ORCHESTRATOR_POOL` (CPU_X64_S — 2 vCPU, 8 GB RAM)
+- Uses `TRAVEL_DEMO_POOL` (CPU_X64_S — shared with `TRAVEL_A2A_AGENT`)
 - Two-container service: llm-server (port 8080) + travel-orchestrator (port 9000)
 - Routes to `TRAVEL_A2A_AGENT` via internal DNS
 
@@ -403,8 +412,7 @@ ALTER SERVICE TRAVEL_ORCHESTRATOR RESUME;
 -- Delete
 DROP SERVICE TRAVEL_A2A_AGENT;
 DROP SERVICE TRAVEL_ORCHESTRATOR;
-DROP COMPUTE POOL TRAVEL_AGENT_POOL;
-DROP COMPUTE POOL TRAVEL_ORCHESTRATOR_POOL;
+DROP COMPUTE POOL TRAVEL_DEMO_POOL;
 ```
 
 ---

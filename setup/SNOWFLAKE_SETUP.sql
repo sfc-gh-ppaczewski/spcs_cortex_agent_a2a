@@ -331,6 +331,88 @@ FROM SPECIFICATION $$
 $$;
 
 -- ============================================================================
+-- 10. HUGGINGFACE EXTERNAL ACCESS (for DOWNLOAD_LLM_MODEL procedure)
+-- ============================================================================
+
+USE ROLE ACCOUNTADMIN;
+
+CREATE NETWORK RULE IF NOT EXISTS TRAVEL_DEMO.AGENTS.HUGGINGFACE_NETWORK_RULE
+    TYPE       = HOST_PORT
+    VALUE_LIST = (
+        'huggingface.co',
+        'hub-ci.huggingface.co',
+        'cdn-lfs-us-1.hf.co',
+        'cdn-lfs-eu-1.hf.co',
+        'cdn-lfs.hf.co',
+        'transfer.xethub.hf.co',
+        'cas-server.xethub.hf.co',
+        'cas-bridge.xethub.hf.co'
+    )
+    MODE    = EGRESS
+    COMMENT = 'Allows egress to HuggingFace CDN for LLM model download';
+
+CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS HUGGINGFACE_ACCESS_INTEGRATION
+    ALLOWED_NETWORK_RULES = (TRAVEL_DEMO.AGENTS.HUGGINGFACE_NETWORK_RULE)
+    ENABLED               = TRUE
+    COMMENT               = 'Used by DOWNLOAD_LLM_MODEL stored procedure';
+
+GRANT USAGE ON INTEGRATION HUGGINGFACE_ACCESS_INTEGRATION TO ROLE SYSADMIN;
+
+USE ROLE SYSADMIN;
+USE DATABASE TRAVEL_DEMO;
+USE SCHEMA AGENTS;
+
+-- ============================================================================
+-- 11. LLM MODEL DOWNLOAD PROCEDURE
+-- ============================================================================
+
+CREATE OR REPLACE PROCEDURE TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL(
+    STAGE_NAME  VARCHAR DEFAULT 'LLM_MODELS',
+    MODEL_URL   VARCHAR DEFAULT 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf'
+)
+RETURNS VARCHAR
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python', 'requests')
+EXTERNAL_ACCESS_INTEGRATIONS = (HUGGINGFACE_ACCESS_INTEGRATION)
+EXECUTE AS OWNER
+HANDLER = 'download_llm_model'
+AS $$
+import os
+import tempfile
+import requests
+
+def download_llm_model(session, stage_name: str, model_url: str) -> str:
+    filename = model_url.split('/')[-1]
+
+    response = requests.get(model_url, stream=True, timeout=600)
+    response.raise_for_status()
+
+    total_bytes = int(response.headers.get('content-length', 0))
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.gguf') as tmp:
+        tmp_path = tmp.name
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1 MB chunks
+            tmp.write(chunk)
+            downloaded += len(chunk)
+
+    try:
+        with open(tmp_path, 'rb') as f:
+            session.file.put_stream(
+                f,
+                f"@{stage_name}/{filename}",
+                auto_compress=False,
+                overwrite=True,
+            )
+    finally:
+        os.unlink(tmp_path)
+
+    size_mb = round(downloaded / (1024 * 1024))
+    return f"OK: uploaded {filename} ({size_mb} MB) to @{stage_name}"
+$$;
+
+-- ============================================================================
 -- VERIFICATION
 -- ============================================================================
 

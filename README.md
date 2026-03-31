@@ -41,6 +41,20 @@ The orchestrator uses the local LLM to classify each query:
 - `FLIGHTS:` → `flights-agent` (:8001) — fares, routes, schedules, passenger feedback
 - General knowledge → answered directly by the local LLM
 
+## A2A Protocol Flow
+
+All three agents expose the [Google A2A protocol](https://github.com/google/a2a) — a standard JSON-RPC interface over HTTPS with JWT authentication. Any A2A-compatible client can discover and call them without custom integration code.
+
+There are two A2A hops in the full request path:
+
+1. **External client → `TRAVEL_ORCHESTRATOR`** (public SPCS endpoint, JWT auth)
+   The orchestrator is an **A2A server**. It exposes a `/.well-known/agent-card.json` discovery endpoint describing its capabilities and accepts `message/send` JSON-RPC requests on port 9000.
+
+2. **`TRAVEL_ORCHESTRATOR` → `hotels-agent` or `flights-agent`** (SPCS internal DNS, JWT auth)
+   After classifying the query, the orchestrator becomes an **A2A client** and forwards the request to the appropriate domain agent over the internal SPCS network (`http://travel-a2a-agent:8000` or `:8001`).
+
+The domain agents then call the Snowflake Cortex Agent REST API using an SPCS session token — the only non-A2A hop in the chain. This means the orchestrator acts as both an A2A server and an A2A client simultaneously, which is the core agent-to-agent chaining pattern this demo illustrates.
+
 ## Repository Structure
 
 ```
@@ -66,7 +80,6 @@ spcs_cortex_agent_a2a/
 │       ├── snowflake_a2a_client.py  # A2A client for SPCS-to-SPCS calls
 │       ├── Dockerfile      # Builds from repo root (shared/ + agents/orchestrator/)
 │       ├── requirements.txt
-│       ├── download_model.sh   # Downloads Qwen GGUF model and uploads to stage
 │       └── test_travel_orchestrator.py
 │
 ├── shared/                 # Shared utilities used by all agents
@@ -251,14 +264,25 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_A2A_AGENT;
 
 ---
 
-## Step 6 — Download and Upload the LLM Model
+## Step 6 — Upload the LLM Model to Snowflake
+
+Run the stored procedure to download the Qwen2.5-1.5B-Instruct GGUF model (~1GB) directly from HuggingFace into `@LLM_MODELS` — no local download required:
 
 ```bash
-cd agents/orchestrator
-./download_model.sh <SNOW_CONNECTION> <AGENT_DATABASE> <AGENT_SCHEMA>
+snow sql -c $SNOW_CONNECTION -q "CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();"
 ```
 
-This downloads the Qwen2.5-1.5B-Instruct GGUF model (~1GB) and uploads it to `@LLM_MODELS`.
+Or from Snowsight:
+
+```sql
+CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();
+```
+
+Verify the upload completed:
+
+```bash
+snow sql -c $SNOW_CONNECTION -q "LIST @TRAVEL_DEMO.AGENTS.LLM_MODELS;"
+```
 
 ---
 
@@ -303,6 +327,8 @@ print(generate_snowflake_jwt('$ACCOUNT_LOCATOR', '$USERNAME', 'rsa_key.p8'))
 ```
 
 #### Discovery Endpoint
+
+Returns the agent's capabilities, description, and supported methods — the standard A2A discovery mechanism. Any A2A-compatible client should call this first.
 
 ```bash
 curl -H "Authorization: Snowflake Token=\"$TOKEN\"" \

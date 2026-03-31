@@ -16,7 +16,7 @@
 --     Cortex Agents, SEMANTIC_MODELS stage)
 --   - Upload semantic YAMLs to @SEMANTIC_MODELS (see SNOWFLAKE_SETUP.sql)
 --   - Build and push Docker images (see instructions below)
---   - For the orchestrator: run download_model.sh to upload GGUF model
+--   - For the orchestrator: run CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL(); to upload GGUF model
 --
 -- Replace these placeholders before running:
 --   <AGENT_DATABASE>  — e.g. TRAVEL_DEMO
@@ -157,8 +157,8 @@ SHOW ENDPOINTS IN SERVICE TRAVEL_A2A_AGENT;
 --
 -- Prerequisites:
 --   - TRAVEL_A2A_AGENT must be deployed and running (see above)
---   - Run download_model.sh to upload GGUF model to @LLM_MODELS
--- ============================================================================
+--   - Upload the GGUF model (runs inside Snowflake, no local download needed):
+--       CALL TRAVEL_DEMO.AGENTS.DOWNLOAD_LLM_MODEL();
 
 -- Verify model is uploaded before proceeding:
 -- LIST @<AGENT_DATABASE>.<AGENT_SCHEMA>.LLM_MODELS;

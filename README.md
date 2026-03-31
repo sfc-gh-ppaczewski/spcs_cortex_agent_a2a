@@ -300,6 +300,124 @@ DROP COMPUTE POOL A2A_AGENT_POOL;
 | Internal error | Missing SNOWFLAKE_HOST | Don't set SNOWFLAKE_HOST manually - let SPCS provide it |
 | Agent not found (404) | Wrong agent path | Verify with `SHOW AGENTS IN SCHEMA <db>.<schema>;` |
 
+---
+
+# External Orchestrator Agent
+
+The `external_agent/` directory contains a second SPCS service that acts as an orchestrator. It runs a local LLM (Qwen2.5-1.5B via llama.cpp) to classify incoming queries and delegates Snowflake data questions to the Cortex A2A agent above via the A2A protocol.
+
+## Architecture
+
+```
+                                         SPCS Service (EXTERNAL_A2A_AGENT)
+┌─────────────────┐  Public Endpoint  ┌────────────────────────────────────────────────┐
+│   A2A Client    │──────────────────▶│  ┌──────────────────┐  ┌───────────────────┐   │
+│  (Other Agents) │    (JWT Auth)     │  │  external-agent  │  │    llm-server     │   │
+└─────────────────┘                   │  │  (Python, :9000) │  │ (llama.cpp, :8080)│   │
+                                      │  │                  │──▶│  Qwen2.5-1.5B    │   │
+                                      │  │   Orchestrator   │  │  (Q4_K_M, ~1GB)  │   │
+                                      │  └────────┬─────────┘  └───────────────────┘   │
+                                      └───────────┼────────────────────────────────────┘
+                                                  │ A2A (SPCS internal DNS)
+                                      ┌───────────▼────────────────────────────────────┐
+                                      │         CORTEX_A2A_AGENT (:8000)               │
+                                      │         (from main deployment above)            │
+                                      └────────────────────────────────────────────────┘
+```
+
+The external agent receives A2A messages, asks the local LLM whether to answer directly or delegate to Snowflake, and routes accordingly. Communication between services uses SPCS internal DNS (no JWT needed).
+
+## Prerequisites
+
+- The **CORTEX_A2A_AGENT** service must be deployed and running (see main deployment above)
+- Docker
+- SnowCLI
+
+## Deployment
+
+### Step 1: Download and Upload the LLM Model
+
+```bash
+cd external_agent
+./download_model.sh <SNOW_CONNECTION> <AGENT_DATABASE> <AGENT_SCHEMA>
+```
+
+This downloads the Qwen2.5-1.5B-Instruct GGUF model (~1GB) and uploads it to a Snowflake stage (`@LLM_MODELS`).
+
+### Step 2: Build and Push the Docker Image
+
+```bash
+export REPO_URL="<repository_url>"    # from SHOW IMAGE REPOSITORIES
+export SNOW_CONNECTION="<YOUR_CONNECTION>"
+
+# Build the external agent image
+docker build --platform linux/amd64 -t external-a2a-agent:latest .
+
+# Login and push
+snow spcs image-registry login --connection $SNOW_CONNECTION
+docker tag external-a2a-agent:latest $REPO_URL/external-a2a-agent:latest
+docker push $REPO_URL/external-a2a-agent:latest
+```
+
+You also need to push the llama.cpp server image to the SPCS registry (SPCS does not allow pulling from external registries):
+
+```bash
+docker pull --platform linux/amd64 ghcr.io/ggml-org/llama.cpp:server
+docker tag ghcr.io/ggml-org/llama.cpp:server $REPO_URL/llama-cpp-server:latest
+docker push $REPO_URL/llama-cpp-server:latest
+```
+
+### Step 3: Create the Service
+
+See `external_agent/DEPLOY.sql` for the full SQL. Key points:
+- Creates `EXTERNAL_AGENT_POOL` (CPU_X64_S — 2 vCPU, 8GB RAM)
+- Creates a two-container service with the llm-server and external-agent
+- Update the image paths to use SPCS registry paths (not external registry URLs)
+
+```sql
+CREATE COMPUTE POOL IF NOT EXISTS EXTERNAL_AGENT_POOL
+    MIN_NODES = 1 MAX_NODES = 1
+    INSTANCE_FAMILY = CPU_X64_S
+    AUTO_RESUME = TRUE AUTO_SUSPEND_SECS = 1800;
+```
+
+### Step 4: Verify and Test
+
+```bash
+# Check service status
+SELECT SYSTEM$GET_SERVICE_STATUS('EXTERNAL_A2A_AGENT');
+
+# Get the public endpoint
+SHOW ENDPOINTS IN SERVICE EXTERNAL_A2A_AGENT;
+```
+
+```bash
+export INGRESS_URL="<ingress_url>"
+export ACCOUNT_LOCATOR="<org_name>-<account_locator>"
+export USERNAME="<username>"
+
+# Test
+python external_agent/test_external_agent.py --query "What data do you have access to?"
+```
+
+## External Agent Service Management
+
+```sql
+-- View logs (llm-server)
+SELECT SYSTEM$GET_SERVICE_LOGS('EXTERNAL_A2A_AGENT', 0, 'llm-server', 100);
+
+-- View logs (external-agent)
+SELECT SYSTEM$GET_SERVICE_LOGS('EXTERNAL_A2A_AGENT', 0, 'external-agent', 100);
+
+-- Suspend / Resume / Delete
+ALTER SERVICE EXTERNAL_A2A_AGENT SUSPEND;
+ALTER SERVICE EXTERNAL_A2A_AGENT RESUME;
+DROP SERVICE EXTERNAL_A2A_AGENT;
+DROP COMPUTE POOL EXTERNAL_AGENT_POOL;
+```
+
+---
+
 ## Resources
 
 - [A2A Protocol](https://github.com/google/a2a)
